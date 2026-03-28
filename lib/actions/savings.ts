@@ -11,6 +11,7 @@ import {
   getPoolBalance,
   getSavingsAccountBalance,
 } from "@/lib/actions/balances"
+import { APP_CURRENCY_CODE } from "@/lib/constants/currency"
 
 export async function createSavingsAccount(
   formData: FormData
@@ -21,7 +22,6 @@ export async function createSavingsAccount(
   const parsed = savingsAccountCreateSchema.safeParse({
     person_id: String(formData.get("person_id") ?? ""),
     liquidity_pool_id: String(formData.get("liquidity_pool_id") ?? ""),
-    currency: (String(formData.get("currency") ?? "MXN") || "MXN").toUpperCase(),
   })
 
   if (!parsed.success) {
@@ -31,12 +31,29 @@ export async function createSavingsAccount(
   const { supabase } = auth.data
   const v = parsed.data
 
+  const { data: personRow, error: personErr } = await supabase
+    .from("persons")
+    .select("id, status, is_member")
+    .eq("id", v.person_id)
+    .maybeSingle()
+
+  if (personErr) {
+    return { ok: false, message: personErr.message }
+  }
+  if (!personRow || personRow.status !== "active" || !personRow.is_member) {
+    return {
+      ok: false,
+      message:
+        "Solo las personas miembros pueden tener cuenta de ahorro. Los no miembros solo pueden solicitar préstamos.",
+    }
+  }
+
   const { data, error } = await supabase
     .from("savings_accounts")
     .insert({
       person_id: v.person_id,
       liquidity_pool_id: v.liquidity_pool_id,
-      currency: v.currency,
+      currency: APP_CURRENCY_CODE,
       status: "active",
     })
     .select("id")

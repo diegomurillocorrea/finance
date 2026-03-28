@@ -1,13 +1,17 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import type { PersonRow } from "@/lib/database.types"
+import { labelPersonStatus } from "@/lib/constants/labels-es"
+import { deletePerson } from "@/lib/actions/persons"
 import { PersonCreateForm } from "@/components/admin/personas/person-create-form"
 import { PersonEditForm } from "@/components/admin/personas/person-edit-form"
 import { Modal } from "@/components/ui/modal"
 import {
+  buttonDangerClass,
   buttonPrimaryClass,
+  buttonSecondaryClass,
   cardClass,
   tableClass,
   tableWrapClass,
@@ -33,6 +37,9 @@ export function PersonasPanel({
   const [editOpen, setEditOpen] = useState(false)
   const [editingPerson, setEditingPerson] = useState<PersonRow | null>(null)
   const [createFormKey, setCreateFormKey] = useState(0)
+  const [personToDelete, setPersonToDelete] = useState<PersonRow | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeletePending, startDeleteTransition] = useTransition()
 
   useEffect(() => {
     if (initialOpenCreate) {
@@ -83,6 +90,36 @@ export function PersonasPanel({
     router.replace("/admin/personas", { scroll: false })
     router.refresh()
   }, [router])
+
+  const handleOpenDeletePerson = useCallback((p: PersonRow) => {
+    if (editingPerson?.id === p.id) {
+      setEditOpen(false)
+      setEditingPerson(null)
+    }
+    setDeleteError(null)
+    setPersonToDelete(p)
+  }, [editingPerson])
+
+  const handleCloseDeleteModal = useCallback(() => {
+    if (isDeletePending) return
+    setPersonToDelete(null)
+    setDeleteError(null)
+  }, [isDeletePending])
+
+  const handleConfirmDeletePerson = useCallback(() => {
+    if (!personToDelete) return
+    setDeleteError(null)
+    startDeleteTransition(async () => {
+      const result = await deletePerson(personToDelete.id)
+      if (result.ok) {
+        setPersonToDelete(null)
+        router.replace("/admin/personas", { scroll: false })
+        router.refresh()
+        return
+      }
+      setDeleteError(result.message)
+    })
+  }, [personToDelete, router])
 
   return (
     <div className="space-y-6">
@@ -148,16 +185,26 @@ export function PersonasPanel({
                     </td>
                     <td className={tdClass}>{p.document_number ?? "—"}</td>
                     <td className={tdClass}>
-                      {p.status === "active" ? "Activa" : "Inactiva"}
+                      {labelPersonStatus(p.status)}
                     </td>
                     <td className={`${tdClass} text-right`}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(p)}
-                        className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(p)}
+                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeletePerson(p)}
+                          className="font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          aria-label={`Eliminar a ${p.full_name}`}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -193,6 +240,55 @@ export function PersonasPanel({
             onSuccess={handleEditSuccess}
             onCancel={handleCloseEdit}
           />
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={personToDelete !== null}
+        onClose={handleCloseDeleteModal}
+        title="Eliminar persona"
+        titleId="modal-eliminar-persona-title"
+        panelClassName="max-w-md"
+      >
+        {personToDelete ? (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">
+              ¿Seguro que quieres eliminar a{" "}
+              <span className="font-semibold text-zinc-900 dark:text-zinc-50">
+                {personToDelete.full_name}
+              </span>
+              ? Esta acción no se puede deshacer.
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Solo es posible si la persona no tiene cuentas de ahorro ni préstamos registrados.
+            </p>
+            {deleteError ? (
+              <div
+                role="alert"
+                className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
+              >
+                {deleteError}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCloseDeleteModal}
+                disabled={isDeletePending}
+                className={buttonSecondaryClass}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeletePerson}
+                disabled={isDeletePending}
+                className={buttonDangerClass}
+              >
+                {isDeletePending ? "Eliminando…" : "Sí, eliminar"}
+              </button>
+            </div>
+          </div>
         ) : null}
       </Modal>
     </div>

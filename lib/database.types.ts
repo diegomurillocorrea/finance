@@ -88,7 +88,7 @@ export interface LoanRow {
   borrower_id: string
   liquidity_pool_id: string
   principal: string
-  annual_interest_rate: string
+  monthly_interest_rate: string
   term_months: number
   payment_frequency: string
   disbursed_at: string | null

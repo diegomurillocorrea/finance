@@ -8,7 +8,7 @@ const quickLinks = [
   { href: "/admin/personas", label: "Personas", desc: "Altas y edición" },
   { href: "/admin/fondos", label: "Fondos", desc: "Liquidez y saldos" },
   { href: "/admin/cuentas-ahorro", label: "Cuentas de ahorro", desc: "Depósitos y retiros" },
-  { href: "/admin/prestamos", label: "Préstamos", desc: "Desembolsos y cuotas" },
+  { href: "/admin/prestamos", label: "Préstamos", desc: "Desembolsos y pagos" },
   { href: "/admin/movimientos-fondo", label: "Mov. fondo", desc: "Auditoría de caja" },
 ] as const
 
@@ -24,7 +24,7 @@ export default async function AdminHomePage() {
   ] = await Promise.all([
     supabase
       .from("liquidity_pools")
-      .select("id, name, currency, is_default")
+      .select("id, name, is_default")
       .order("is_default", { ascending: false }),
     supabase.from("persons").select("*", { count: "exact", head: true }),
     supabase.from("loans").select("*", { count: "exact", head: true }),
@@ -42,14 +42,13 @@ export default async function AdminHomePage() {
     poolsError ?? personsError ?? loansError ?? accountsError ?? activeLoansError
   const errorMessage = dataError?.message ?? null
 
-  const poolBalances: { id: string; name: string; currency: string; balance: number }[] = []
+  const poolBalances: { id: string; name: string; balance: number }[] = []
   if (pools?.length) {
     for (const p of pools) {
       const balance = await getPoolBalance(supabase, p.id)
       poolBalances.push({
         id: p.id,
         name: p.name,
-        currency: p.currency,
         balance,
       })
     }
@@ -156,7 +155,7 @@ export default async function AdminHomePage() {
                   {p.name}
                 </Link>
                 <span className="tabular-nums font-semibold text-zinc-900 dark:text-zinc-50">
-                  {formatMoney(p.balance, p.currency)}
+                  {formatMoney(p.balance)}
                 </span>
               </li>
             ))}

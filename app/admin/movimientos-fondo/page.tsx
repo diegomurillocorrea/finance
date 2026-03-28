@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
+import { labelPoolMovementType } from "@/lib/constants/labels-es"
 import { formatMoney, toNumber } from "@/lib/format/money"
 import {
   cardClass,
@@ -102,16 +103,15 @@ export default async function MovimientosFondoPage() {
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {list.map((m) => {
-                  const cur = m.liquidity_pools?.currency ?? "MXN"
                   return (
                     <tr key={m.id}>
                       <td className={`${tdClass} whitespace-nowrap text-zinc-600`}>
                         {new Date(m.occurred_at).toLocaleString("es-MX")}
                       </td>
                       <td className={tdClass}>{m.liquidity_pools?.name ?? "—"}</td>
-                      <td className={tdClass}>{m.type}</td>
+                      <td className={tdClass}>{labelPoolMovementType(m.type)}</td>
                       <td className={`${tdClass} tabular-nums font-medium`}>
-                        {formatMoney(toNumber(m.amount), cur)}
+                        {formatMoney(toNumber(m.amount))}
                       </td>
                       <td className={tdClass}>{m.description ?? "—"}</td>
                     </tr>

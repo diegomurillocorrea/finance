@@ -1,16 +1,47 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { buildAmortizationSchedule } from "@/lib/loan-schedule"
 import { toNumber } from "@/lib/format/money"
+import {
+  outstandingPrincipal,
+  round2,
+  totalPrincipalRepaidFromRows,
+} from "@/lib/loan-balance"
 import { getPoolBalance } from "@/lib/actions/balances"
 import { requireSupabaseUser, type ActionResult } from "@/lib/actions/auth-context"
 import {
-  customLoanPaymentSchema,
+  loanAbonoInterestSchema,
+  loanAbonoPrincipalSchema,
   loanCreateSchema,
   loanUpdateDraftSchema,
 } from "@/lib/validations/finance"
 import { zodFirstMessage } from "@/lib/validations/zod-message"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+async function fetchPrincipalRepaidSum(
+  supabase: SupabaseClient,
+  loanId: string
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("loan_payments")
+    .select("principal_portion")
+    .eq("loan_id", loanId)
+
+  if (error || !data) return 0
+  return totalPrincipalRepaidFromRows(data)
+}
+
+async function maybeMarkLoanPaid(
+  supabase: SupabaseClient,
+  loanId: string,
+  originalPrincipal: number
+) {
+  const repaid = await fetchPrincipalRepaidSum(supabase, loanId)
+  const remaining = outstandingPrincipal(originalPrincipal, repaid)
+  if (remaining <= 0.01) {
+    await supabase.from("loans").update({ status: "paid" }).eq("id", loanId)
+  }
+}
 
 export async function createLoan(
   formData: FormData
@@ -19,14 +50,14 @@ export async function createLoan(
   if (!auth.ok) return auth
 
   const principal = Number(String(formData.get("principal") ?? "").replace(",", "."))
-  const annual = Number(String(formData.get("annual_interest_rate") ?? "").replace(",", "."))
+  const monthlyRate = Number(String(formData.get("monthly_interest_rate") ?? "").replace(",", "."))
   const term = Number(String(formData.get("term_months") ?? ""))
 
   const parsed = loanCreateSchema.safeParse({
     borrower_id: String(formData.get("borrower_id") ?? ""),
     liquidity_pool_id: String(formData.get("liquidity_pool_id") ?? ""),
     principal,
-    annual_interest_rate: annual,
+    monthly_interest_rate: monthlyRate,
     term_months: term,
     payment_frequency: String(formData.get("payment_frequency") ?? "monthly"),
     purpose: String(formData.get("purpose") ?? ""),
@@ -49,7 +80,7 @@ export async function createLoan(
       borrower_id: v.borrower_id,
       liquidity_pool_id: v.liquidity_pool_id,
       principal: v.principal,
-      annual_interest_rate: v.annual_interest_rate,
+      monthly_interest_rate: v.monthly_interest_rate,
       term_months: v.term_months,
       payment_frequency: v.payment_frequency,
       purpose: v.purpose?.trim() || null,
@@ -74,13 +105,13 @@ export async function updateLoanDraft(
   if (!auth.ok) return auth
 
   const principal = Number(String(formData.get("principal") ?? "").replace(",", "."))
-  const annual = Number(String(formData.get("annual_interest_rate") ?? "").replace(",", "."))
+  const monthlyRate = Number(String(formData.get("monthly_interest_rate") ?? "").replace(",", "."))
   const term = Number(String(formData.get("term_months") ?? ""))
 
   const parsed = loanUpdateDraftSchema.safeParse({
     id: String(formData.get("id") ?? ""),
     principal,
-    annual_interest_rate: annual,
+    monthly_interest_rate: monthlyRate,
     term_months: term,
     payment_frequency: String(formData.get("payment_frequency") ?? "monthly"),
     purpose: String(formData.get("purpose") ?? ""),
@@ -110,7 +141,7 @@ export async function updateLoanDraft(
     .from("loans")
     .update({
       principal: v.principal,
-      annual_interest_rate: v.annual_interest_rate,
+      monthly_interest_rate: v.monthly_interest_rate,
       term_months: v.term_months,
       payment_frequency: v.payment_frequency,
       purpose: v.purpose?.trim() || null,
@@ -154,22 +185,6 @@ export async function disburseLoan(loanId: string): Promise<ActionResult> {
   }
 
   const disbursedAt = new Date().toISOString()
-  const firstDueIso = (() => {
-    const d = new Date()
-    d.setMonth(d.getMonth() + 1)
-    return d.toISOString().slice(0, 10)
-  })()
-
-  const schedule = buildAmortizationSchedule(
-    principal,
-    toNumber(loan.annual_interest_rate),
-    loan.term_months,
-    firstDueIso
-  )
-
-  const maturityDate = schedule.length
-    ? schedule[schedule.length - 1].dueDate
-    : null
 
   const { error: delErr } = await supabase
     .from("loan_installments")
@@ -178,22 +193,6 @@ export async function disburseLoan(loanId: string): Promise<ActionResult> {
 
   if (delErr) {
     return { ok: false, message: delErr.message }
-  }
-
-  if (schedule.length) {
-    const rows = schedule.map((r) => ({
-      loan_id: loanId,
-      installment_number: r.installmentNumber,
-      due_date: r.dueDate,
-      principal_due: r.principalDue,
-      interest_due: r.interestDue,
-      total_due: r.totalDue,
-      status: "pending" as const,
-    }))
-    const { error: insErr } = await supabase.from("loan_installments").insert(rows)
-    if (insErr) {
-      return { ok: false, message: insErr.message }
-    }
   }
 
   const { error: poolErr } = await supabase.from("pool_movements").insert({
@@ -213,7 +212,7 @@ export async function disburseLoan(loanId: string): Promise<ActionResult> {
     .update({
       status: "active",
       disbursed_at: disbursedAt,
-      maturity_date: maturityDate,
+      maturity_date: null,
     })
     .eq("id", loanId)
 
@@ -228,11 +227,27 @@ export async function disburseLoan(loanId: string): Promise<ActionResult> {
   return { ok: true, data: undefined }
 }
 
-export async function payNextLoanInstallment(
-  loanId: string
-): Promise<ActionResult> {
+function parseAmountField(formData: FormData, key: string, emptyAsZero: boolean): number {
+  const raw = String(formData.get(key) ?? "")
+    .trim()
+    .replace(",", ".")
+  if (raw === "" && emptyAsZero) return 0
+  const n = Number(raw)
+  if (Number.isNaN(n)) return Number.NaN
+  return round2(n)
+}
+
+/**
+ * `interest`: solo interés. `principal`: capital e interés en un mismo registro (cualquiera puede ser 0 si el otro no).
+ */
+export async function registerLoanAbono(formData: FormData): Promise<ActionResult> {
   const auth = await requireSupabaseUser()
   if (!auth.ok) return auth
+
+  const loanId = String(formData.get("loan_id") ?? "")
+  const abonoKind = String(formData.get("abono_kind") ?? "")
+  const notes = String(formData.get("notes") ?? "")
+
   const { supabase } = auth.data
 
   const { data: loan, error: lErr } = await supabase
@@ -245,179 +260,109 @@ export async function payNextLoanInstallment(
     return { ok: false, message: "Préstamo no activo" }
   }
 
-  const { data: nextCuota, error: cErr } = await supabase
-    .from("loan_installments")
-    .select("*")
-    .eq("loan_id", loanId)
-    .in("status", ["pending", "partial", "overdue"])
-    .order("installment_number", { ascending: true })
-    .limit(1)
-    .maybeSingle()
+  const originalPrincipal = toNumber(loan.principal)
+  const repaidBefore = await fetchPrincipalRepaidSum(supabase, loanId)
+  const outstandingBefore = outstandingPrincipal(originalPrincipal, repaidBefore)
 
-  if (cErr || !nextCuota) {
-    return { ok: false, message: "No hay cuotas pendientes" }
+  if (outstandingBefore <= 0.01) {
+    return { ok: false, message: "No hay capital pendiente en este préstamo" }
   }
 
-  const principalPortion = toNumber(nextCuota.principal_due)
-  const interestPortion = toNumber(nextCuota.interest_due)
-  const amount = toNumber(nextCuota.total_due)
+  let principalPortion = 0
+  let interestPortion = 0
+  let totalAmount = 0
+  let defaultNote = "Abono"
+
+  if (abonoKind === "interest") {
+    const interest_amount = parseAmountField(formData, "interest_amount", false)
+    const parsed = loanAbonoInterestSchema.safeParse({
+      loan_id: loanId,
+      abono_kind: "interest",
+      interest_amount,
+      notes,
+    })
+    if (!parsed.success) {
+      return { ok: false, message: zodFirstMessage(parsed.error) }
+    }
+    interestPortion = parsed.data.interest_amount
+    totalAmount = interestPortion
+    defaultNote = "Pago de intereses"
+  } else if (abonoKind === "principal") {
+    const principal_amount = parseAmountField(formData, "principal_amount", true)
+    const interest_amount = parseAmountField(formData, "interest_amount", true)
+    if (Number.isNaN(principal_amount) || Number.isNaN(interest_amount)) {
+      return { ok: false, message: "Cantidad inválida" }
+    }
+    const parsed = loanAbonoPrincipalSchema.safeParse({
+      loan_id: loanId,
+      abono_kind: "principal",
+      principal_amount,
+      interest_amount,
+      notes,
+    })
+    if (!parsed.success) {
+      return { ok: false, message: zodFirstMessage(parsed.error) }
+    }
+    principalPortion = parsed.data.principal_amount
+    interestPortion = parsed.data.interest_amount
+    if (principalPortion > outstandingBefore + 0.01) {
+      return {
+        ok: false,
+        message: `El abono a capital no puede superar el saldo (${outstandingBefore.toFixed(2)})`,
+      }
+    }
+    totalAmount = round2(principalPortion + interestPortion)
+    defaultNote =
+      principalPortion > 0 && interestPortion > 0
+        ? "Abono a capital e interés"
+        : principalPortion > 0
+          ? "Abono a capital"
+          : "Pago de intereses"
+  } else {
+    return { ok: false, message: "Tipo de abono inválido" }
+  }
+
+  const notesTrim = notes.trim() || null
 
   const { error: payErr } = await supabase.from("loan_payments").insert({
     loan_id: loanId,
-    amount,
+    amount: totalAmount,
     principal_portion: principalPortion,
     interest_portion: interestPortion,
     penalty_portion: 0,
-    notes: `Cuota ${String(nextCuota.installment_number)}`,
+    notes: notesTrim ?? defaultNote,
   })
 
   if (payErr) {
     return { ok: false, message: payErr.message }
   }
 
-  const { error: p1 } = await supabase.from("pool_movements").insert({
-    pool_id: loan.liquidity_pool_id,
-    type: "loan_repayment_principal",
-    amount: principalPortion,
-    reference_loan_id: loanId,
-    description: `Abono capital cuota ${String(nextCuota.installment_number)}`,
-  })
-  if (p1) return { ok: false, message: p1.message }
-
-  const { error: p2 } = await supabase.from("pool_movements").insert({
-    pool_id: loan.liquidity_pool_id,
-    type: "loan_repayment_interest",
-    amount: interestPortion,
-    reference_loan_id: loanId,
-    description: `Interés cuota ${String(nextCuota.installment_number)}`,
-  })
-  if (p2) return { ok: false, message: p2.message }
-
-  const { error: upCuota } = await supabase
-    .from("loan_installments")
-    .update({
-      status: "paid",
-      paid_at: new Date().toISOString(),
-    })
-    .eq("id", nextCuota.id)
-
-  if (upCuota) {
-    return { ok: false, message: upCuota.message }
-  }
-
-  const { count, error: cntErr } = await supabase
-    .from("loan_installments")
-    .select("*", { count: "exact", head: true })
-    .eq("loan_id", loanId)
-    .neq("status", "paid")
-
-  if (!cntErr && (count ?? 0) === 0) {
-    await supabase.from("loans").update({ status: "paid" }).eq("id", loanId)
-  }
-
-  revalidatePath("/admin/prestamos")
-  revalidatePath(`/admin/prestamos/${loanId}`)
-  revalidatePath("/admin/movimientos-fondo")
-  revalidatePath("/admin")
-  return { ok: true, data: undefined }
-}
-
-export async function recordCustomLoanPayment(
-  formData: FormData
-): Promise<ActionResult> {
-  const auth = await requireSupabaseUser()
-  if (!auth.ok) return auth
-
-  const amount = Number(String(formData.get("amount") ?? "").replace(",", "."))
-  const principalPortion = Number(
-    String(formData.get("principal_portion") ?? "").replace(",", ".")
-  )
-  const interestPortion = Number(
-    String(formData.get("interest_portion") ?? "").replace(",", ".")
-  )
-  const penaltyPortion = Number(
-    String(formData.get("penalty_portion") ?? "0").replace(",", ".")
-  )
-
-  const parsed = customLoanPaymentSchema.safeParse({
-    loan_id: String(formData.get("loan_id") ?? ""),
-    amount,
-    principal_portion: principalPortion,
-    interest_portion: interestPortion,
-    penalty_portion: penaltyPortion,
-    notes: String(formData.get("notes") ?? ""),
-  })
-
-  if (!parsed.success) {
-    return { ok: false, message: zodFirstMessage(parsed.error) }
-  }
-
-  const v = parsed.data
-  const sum = v.principal_portion + v.interest_portion + (v.penalty_portion ?? 0)
-  if (Math.abs(sum - v.amount) > 0.01) {
-    return { ok: false, message: "La suma de capital + interés + mora debe igualar el monto" }
-  }
-
-  const { supabase } = auth.data
-
-  const { data: loan, error: lErr } = await supabase
-    .from("loans")
-    .select("*")
-    .eq("id", v.loan_id)
-    .single()
-
-  if (lErr || !loan || loan.status !== "active") {
-    return { ok: false, message: "Préstamo no activo" }
-  }
-
-  const { error: payErr } = await supabase.from("loan_payments").insert({
-    loan_id: v.loan_id,
-    amount: v.amount,
-    principal_portion: v.principal_portion,
-    interest_portion: v.interest_portion,
-    penalty_portion: v.penalty_portion ?? 0,
-    notes: v.notes?.trim() || null,
-  })
-
-  if (payErr) {
-    return { ok: false, message: payErr.message }
-  }
-
-  if (v.principal_portion > 0) {
+  if (principalPortion > 0) {
     const { error: e1 } = await supabase.from("pool_movements").insert({
       pool_id: loan.liquidity_pool_id,
       type: "loan_repayment_principal",
-      amount: v.principal_portion,
-      reference_loan_id: v.loan_id,
-      description: v.notes?.trim() || "Abono a capital",
+      amount: principalPortion,
+      reference_loan_id: loanId,
+      description: notesTrim || "Abono a capital",
     })
     if (e1) return { ok: false, message: e1.message }
   }
 
-  if (v.interest_portion > 0) {
+  if (interestPortion > 0) {
     const { error: e2 } = await supabase.from("pool_movements").insert({
       pool_id: loan.liquidity_pool_id,
       type: "loan_repayment_interest",
-      amount: v.interest_portion,
-      reference_loan_id: v.loan_id,
-      description: v.notes?.trim() || "Pago de intereses",
+      amount: interestPortion,
+      reference_loan_id: loanId,
+      description: notesTrim || "Pago de intereses",
     })
     if (e2) return { ok: false, message: e2.message }
   }
 
-  if ((v.penalty_portion ?? 0) > 0) {
-    const { error: e3 } = await supabase.from("pool_movements").insert({
-      pool_id: loan.liquidity_pool_id,
-      type: "adjustment",
-      amount: v.penalty_portion ?? 0,
-      reference_loan_id: v.loan_id,
-      description: v.notes?.trim() || "Mora u otro concepto",
-    })
-    if (e3) return { ok: false, message: e3.message }
-  }
+  await maybeMarkLoanPaid(supabase, loanId, originalPrincipal)
 
   revalidatePath("/admin/prestamos")
-  revalidatePath(`/admin/prestamos/${v.loan_id}`)
+  revalidatePath(`/admin/prestamos/${loanId}`)
   revalidatePath("/admin/movimientos-fondo")
   revalidatePath("/admin")
   return { ok: true, data: undefined }

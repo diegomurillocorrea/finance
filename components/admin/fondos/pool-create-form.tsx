@@ -1,10 +1,8 @@
 "use client"
 
-import type { LiquidityPoolRow } from "@/lib/database.types"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { updateLiquidityPool } from "@/lib/actions/pools"
+import { createLiquidityPool } from "@/lib/actions/pools"
 import {
   buttonPrimaryClass,
   buttonSecondaryClass,
@@ -12,11 +10,12 @@ import {
   labelClass,
 } from "@/lib/form-classes"
 
-interface Props {
-  pool: LiquidityPoolRow
+export interface PoolCreateFormProps {
+  onSuccess?: () => void
+  onCancel?: () => void
 }
 
-export function PoolEditForm({ pool }: Props) {
+export function PoolCreateForm({ onSuccess, onCancel }: PoolCreateFormProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -24,22 +23,28 @@ export function PoolEditForm({ pool }: Props) {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
-    const fd = new FormData(e.currentTarget)
-    fd.set("id", pool.id)
+    const form = e.currentTarget
+    const fd = new FormData(form)
     startTransition(async () => {
-      const r = await updateLiquidityPool(fd)
-      if (r.ok) {
-        router.push("/admin/fondos")
-        router.refresh()
+      const r = await createLiquidityPool(fd)
+      if (!r.ok) {
+        setError(r.message)
         return
       }
-      setError(r.message)
+      if (onSuccess) {
+        onSuccess()
+        return
+      }
+      if (form.isConnected) {
+        form.reset()
+      }
+      router.push("/admin/fondos")
+      router.refresh()
     })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-md flex-col gap-5">
-      <input type="hidden" name="id" value={pool.id} />
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {error ? (
         <div
           role="alert"
@@ -50,28 +55,13 @@ export function PoolEditForm({ pool }: Props) {
       ) : null}
 
       <div>
-        <label htmlFor="name" className={labelClass}>
-          Nombre
+        <label htmlFor="pool_name" className={labelClass}>
+          Nombre del fondo
         </label>
         <input
-          id="name"
+          id="pool_name"
           name="name"
           required
-          defaultValue={pool.name}
-          className={inputClass}
-          disabled={isPending}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="currency" className={labelClass}>
-          Moneda
-        </label>
-        <input
-          id="currency"
-          name="currency"
-          defaultValue={pool.currency}
-          maxLength={3}
           className={inputClass}
           disabled={isPending}
         />
@@ -79,25 +69,31 @@ export function PoolEditForm({ pool }: Props) {
 
       <div className="flex items-center gap-2">
         <input
-          id="is_default"
+          id="pool_is_default"
           name="is_default"
           type="checkbox"
-          defaultChecked={pool.is_default}
           className="h-4 w-4 rounded border-zinc-300 accent-emerald-600 dark:border-zinc-600"
           disabled={isPending}
         />
-        <label htmlFor="is_default" className="text-sm text-zinc-700 dark:text-zinc-300">
-          Fondo predeterminado
+        <label htmlFor="pool_is_default" className="text-sm text-zinc-700 dark:text-zinc-300">
+          Marcar como fondo predeterminado
         </label>
       </div>
 
       <div className="flex flex-wrap gap-3">
         <button type="submit" disabled={isPending} className={buttonPrimaryClass}>
-          Guardar
+          {isPending ? "Guardando…" : "Crear"}
         </button>
-        <Link href="/admin/fondos" className={buttonSecondaryClass}>
-          Volver
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className={buttonSecondaryClass}
+          >
+            Cancelar
+          </button>
+        ) : null}
       </div>
     </form>
   )

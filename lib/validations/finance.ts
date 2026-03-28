@@ -37,7 +37,6 @@ export const personUpdateSchema = personCreateSchema.extend({
 
 export const poolCreateSchema = z.object({
   name: z.string().min(1, "Nombre requerido"),
-  currency: z.string().length(3, "Código ISO de 3 letras").default("MXN"),
   is_default: z.boolean().optional(),
 })
 
@@ -48,7 +47,6 @@ export const poolUpdateSchema = poolCreateSchema.extend({
 export const savingsAccountCreateSchema = z.object({
   person_id: z.string().uuid(),
   liquidity_pool_id: z.string().uuid(),
-  currency: z.string().length(3).default("MXN"),
 })
 
 export const savingsMovementSchema = z.object({
@@ -61,7 +59,7 @@ export const loanCreateSchema = z.object({
   borrower_id: z.string().uuid(),
   liquidity_pool_id: z.string().uuid(),
   principal: z.number().positive(),
-  annual_interest_rate: z.number().min(0),
+  monthly_interest_rate: z.number().min(0),
   term_months: z.number().int().min(1).max(600),
   payment_frequency: z.string().min(1).default("monthly"),
   purpose: z.string().optional().or(z.literal("")),
@@ -74,17 +72,28 @@ export const loanCreateSchema = z.object({
 export const loanUpdateDraftSchema = z.object({
   id: z.string().uuid(),
   principal: z.number().positive(),
-  annual_interest_rate: z.number().min(0),
+  monthly_interest_rate: z.number().min(0),
   term_months: z.number().int().min(1).max(600),
   payment_frequency: z.string().min(1),
   purpose: z.string().optional().or(z.literal("")),
 })
 
-export const customLoanPaymentSchema = z.object({
+export const loanAbonoInterestSchema = z.object({
   loan_id: z.string().uuid(),
-  amount: z.number().positive(),
-  principal_portion: z.number().min(0),
-  interest_portion: z.number().min(0),
-  penalty_portion: z.number().min(0).optional(),
+  abono_kind: z.literal("interest"),
+  interest_amount: z.number().positive(),
   notes: z.string().optional().or(z.literal("")),
 })
+
+export const loanAbonoPrincipalSchema = z
+  .object({
+    loan_id: z.string().uuid(),
+    abono_kind: z.literal("principal"),
+    principal_amount: z.number().min(0),
+    interest_amount: z.number().min(0),
+    notes: z.string().optional().or(z.literal("")),
+  })
+  .refine(
+    (d) => d.principal_amount + d.interest_amount > 0,
+    { message: "Ingresa capital o interés (o ambos)", path: ["principal_amount"] }
+  )

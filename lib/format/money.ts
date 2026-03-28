@@ -1,20 +1,22 @@
-const mxn = new Intl.NumberFormat("es-MX", {
+import { APP_CURRENCY_CODE } from "@/lib/constants/currency"
+
+const usd = new Intl.NumberFormat("es-MX", {
   style: "currency",
-  currency: "MXN",
+  currency: APP_CURRENCY_CODE,
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
 
-export function formatMoney(amount: number, currencyCode = "MXN"): string {
-  if (currencyCode !== "MXN") {
-    return new Intl.NumberFormat("es-MX", {
-      style: "currency",
-      currency: currencyCode,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
+export function formatMoney(amount: number, currencyCode: string = APP_CURRENCY_CODE): string {
+  if (currencyCode === APP_CURRENCY_CODE) {
+    return usd.format(amount)
   }
-  return mxn.format(amount)
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
 }
 
 export function parseMoneyInput(value: string): number | null {

@@ -7,6 +7,7 @@ import {
 } from "@/lib/validations/finance"
 import { requireSupabaseUser, type ActionResult } from "@/lib/actions/auth-context"
 import { zodFirstMessage } from "@/lib/validations/zod-message"
+import { z } from "zod"
 
 export async function createPerson(
   formData: FormData
@@ -105,6 +106,58 @@ export async function updatePerson(
       status: v.status,
     })
     .eq("id", v.id)
+
+  if (error) {
+    return { ok: false, message: error.message }
+  }
+
+  revalidatePath("/admin/personas")
+  revalidatePath("/admin")
+  return { ok: true, data: undefined }
+}
+
+export async function deletePerson(personId: string): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+
+  const idParsed = z.string().uuid().safeParse(personId)
+  if (!idParsed.success) {
+    return { ok: false, message: "Identificador de persona inválido" }
+  }
+
+  const id = idParsed.data
+  const { supabase } = auth.data
+
+  const [{ count: accountsCount, error: accErr }, { count: loansCount, error: loanErr }] =
+    await Promise.all([
+      supabase
+        .from("savings_accounts")
+        .select("*", { count: "exact", head: true })
+        .eq("person_id", id),
+      supabase
+        .from("loans")
+        .select("*", { count: "exact", head: true })
+        .eq("borrower_id", id),
+    ])
+
+  if (accErr) {
+    return { ok: false, message: accErr.message }
+  }
+  if (loanErr) {
+    return { ok: false, message: loanErr.message }
+  }
+
+  const nAccounts = accountsCount ?? 0
+  const nLoans = loansCount ?? 0
+
+  if (nAccounts > 0 || nLoans > 0) {
+    return {
+      ok: false,
+      message: `No se puede eliminar: tiene ${String(nAccounts)} cuenta(s) de ahorro y ${String(nLoans)} préstamo(s) registrados.`,
+    }
+  }
+
+  const { error } = await supabase.from("persons").delete().eq("id", id)
 
   if (error) {
     return { ok: false, message: error.message }

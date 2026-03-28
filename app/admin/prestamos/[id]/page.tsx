@@ -1,7 +1,17 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
+import {
+  labelInstallmentStatus,
+  labelLoanStatus,
+  labelPaymentFrequency,
+} from "@/lib/constants/labels-es"
 import { formatMoney, toNumber } from "@/lib/format/money"
+import {
+  monthlyInterestOnOutstanding,
+  outstandingPrincipal,
+  totalPrincipalRepaidFromRows,
+} from "@/lib/loan-balance"
 import type { LoanInstallmentRow, LoanRow, LoanPaymentRow } from "@/lib/database.types"
 import {
   cardClass,
@@ -49,7 +59,6 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
     liquidity_pools: Array.isArray(pl) ? pl[0] ?? null : pl,
   }
 
-  const currency = loan.liquidity_pools?.currency ?? "MXN"
 
   const { data: installments } = await supabase
     .from("loan_installments")
@@ -57,15 +66,27 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
     .eq("loan_id", id)
     .order("installment_number")
 
-  const { data: payments } = await supabase
+  const { data: allPayments } = await supabase
     .from("loan_payments")
     .select("*")
     .eq("loan_id", id)
     .order("paid_at", { ascending: false })
-    .limit(30)
 
   const cuotas = (installments ?? []) as LoanInstallmentRow[]
-  const pagos = (payments ?? []) as LoanPaymentRow[]
+  const allPagos = (allPayments ?? []) as LoanPaymentRow[]
+  const pagos = allPagos.slice(0, 30)
+
+  const isDisbursed = Boolean(loan.disbursed_at)
+  const totalPrincipalPaid = isDisbursed
+    ? totalPrincipalRepaidFromRows(allPagos)
+    : 0
+  const saldoInsoluto = isDisbursed
+    ? outstandingPrincipal(toNumber(loan.principal), totalPrincipalPaid)
+    : 0
+  const interesMensualSugerido =
+    loan.status === "active" && saldoInsoluto > 0.01
+      ? monthlyInterestOnOutstanding(saldoInsoluto, toNumber(loan.monthly_interest_rate))
+      : 0
 
   return (
     <div className="space-y-6">
@@ -81,35 +102,43 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Fondo: {loan.liquidity_pools?.name ?? "—"} · Estado:{" "}
-          <span className="font-medium">{loan.status}</span>
+          <span className="font-medium">{labelLoanStatus(loan.status)}</span>
         </p>
       </div>
 
       <section className={`${cardClass} grid gap-4 tablet:grid-cols-3`}>
         <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Principal</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Capital original
+          </p>
           <p className="mt-1 text-xl font-semibold tabular-nums">
-            {formatMoney(toNumber(loan.principal), currency)}
+            {formatMoney(toNumber(loan.principal))}
           </p>
         </div>
         <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Tasa anual</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Tasa mensual</p>
           <p className="mt-1 text-xl font-semibold tabular-nums">
-            {toNumber(loan.annual_interest_rate).toFixed(2)}%
+            {toNumber(loan.monthly_interest_rate).toFixed(2)}%
           </p>
         </div>
         <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Plazo</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Plazo referencial
+          </p>
           <p className="mt-1 text-xl font-semibold">{loan.term_months} meses</p>
+        </div>
+        <div>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Frecuencia de pago</p>
+          <p className="mt-1 text-xl font-semibold">
+            {labelPaymentFrequency(loan.payment_frequency)}
+          </p>
         </div>
         {loan.disbursed_at ? (
           <div className="tablet:col-span-3">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Desembolso</p>
             <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
               {new Date(loan.disbursed_at).toLocaleString("es-MX")}
-              {loan.maturity_date
-                ? ` · Vencimiento final: ${loan.maturity_date}`
-                : null}
+              {loan.maturity_date ? ` · Vencimiento: ${loan.maturity_date}` : null}
             </p>
           </div>
         ) : null}
@@ -124,17 +153,56 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
       <section className={cardClass}>
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Acciones</h2>
         <div className="mt-4">
-          <LoanDetailActions loan={loan} />
+          <LoanDetailActions
+            loan={loan}
+            outstandingPrincipal={saldoInsoluto}
+            suggestedMonthlyInterest={interesMensualSugerido}
+          />
         </div>
       </section>
 
-      <section className={cardClass}>
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Plan de cuotas</h2>
-        {!cuotas.length ? (
+      {isDisbursed ? (
+        <section className={cardClass}>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Saldo insoluto
+          </h2>
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Aún no hay cuotas. Desembolsa el préstamo para generarlas.
+            El interés mensual es la tasa sobre el capital pendiente. El prestatario puede
+            pagar solo interés o interés más abono a capital; cada abono reduce el saldo y
+            el interés del mes siguiente.
           </p>
-        ) : (
+          <dl className="mt-4 grid gap-3 tablet:grid-cols-2">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Capital pendiente
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                {formatMoney(saldoInsoluto)}
+              </dd>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Interés mensual sugerido (sobre saldo)
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                {loan.status === "active" && saldoInsoluto > 0.01
+                  ? formatMoney(interesMensualSugerido)
+                  : "—"}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
+      {cuotas.length > 0 ? (
+        <section className={cardClass}>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Cuotas históricas (legado)
+          </h2>
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            Este préstamo tiene filas de cuotas antiguas; los nuevos pagos siguen el saldo
+            insoluto y no dependen de esta tabla.
+          </p>
           <div className={`${tableWrapClass} mt-4`}>
             <table className={tableClass}>
               <thead>
@@ -153,22 +221,22 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
                     <td className={tdClass}>{c.installment_number}</td>
                     <td className={`${tdClass} tabular-nums`}>{c.due_date}</td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(c.principal_due), currency)}
+                      {formatMoney(toNumber(c.principal_due))}
                     </td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(c.interest_due), currency)}
+                      {formatMoney(toNumber(c.interest_due))}
                     </td>
                     <td className={`${tdClass} tabular-nums font-medium`}>
-                      {formatMoney(toNumber(c.total_due), currency)}
+                      {formatMoney(toNumber(c.total_due))}
                     </td>
-                    <td className={tdClass}>{c.status}</td>
+                    <td className={tdClass}>{labelInstallmentStatus(c.status)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
 
       <section className={cardClass}>
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
@@ -195,13 +263,13 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
                       {new Date(p.paid_at).toLocaleString("es-MX")}
                     </td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.amount), currency)}
+                      {formatMoney(toNumber(p.amount))}
                     </td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.principal_portion), currency)}
+                      {formatMoney(toNumber(p.principal_portion))}
                     </td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.interest_portion), currency)}
+                      {formatMoney(toNumber(p.interest_portion))}
                     </td>
                     <td className={tdClass}>{p.notes ?? "—"}</td>
                   </tr>

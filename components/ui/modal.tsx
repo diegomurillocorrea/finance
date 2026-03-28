@@ -8,9 +8,18 @@ interface ModalProps {
   title: string
   titleId: string
   children: React.ReactNode
+  /** Reemplaza max-w-lg del panel (ej. max-w-xl, max-w-2xl) */
+  panelClassName?: string
 }
 
-export function Modal({ open, onClose, title, titleId, children }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  titleId,
+  children,
+  panelClassName,
+}: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -44,7 +53,9 @@ export function Modal({ open, onClose, title, titleId, children }: ModalProps) {
         onClick={onClose}
         aria-label="Cerrar diálogo"
       />
-      <div className="relative z-10 flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div
+        className={`relative z-10 flex max-h-[min(90vh,720px)] w-full flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 ${panelClassName ?? "max-w-lg"}`}
+      >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
           <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             {title}

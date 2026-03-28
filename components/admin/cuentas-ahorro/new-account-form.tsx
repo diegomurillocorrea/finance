@@ -18,12 +18,19 @@ interface Option {
   name?: string
 }
 
-interface Props {
+export interface NewAccountFormProps {
   persons: Option[]
   pools: Option[]
+  onSuccess?: (accountId: string) => void
+  onCancel?: () => void
 }
 
-export function NewAccountForm({ persons, pools }: Props) {
+export function NewAccountForm({
+  persons,
+  pools,
+  onSuccess,
+  onCancel,
+}: NewAccountFormProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -31,27 +38,35 @@ export function NewAccountForm({ persons, pools }: Props) {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
-    const fd = new FormData(e.currentTarget)
+    const form = e.currentTarget
+    const fd = new FormData(form)
     startTransition(async () => {
       const r = await createSavingsAccount(fd)
-      if (r.ok) {
-        router.push(`/admin/cuentas-ahorro/${r.data.id}`)
-        router.refresh()
+      if (!r.ok) {
+        setError(r.message)
         return
       }
-      setError(r.message)
+      if (onSuccess) {
+        onSuccess(r.data.id)
+        return
+      }
+      if (form.isConnected) {
+        form.reset()
+      }
+      router.push(`/admin/cuentas-ahorro/${r.data.id}`)
+      router.refresh()
     })
   }
 
   if (!persons.length || !pools.length) {
     return (
       <p className="text-sm text-amber-800 dark:text-amber-200">
-        Necesitas al menos una persona activa y un fondo.{" "}
-        <Link href="/admin/personas/nuevo" className="underline">
+        Necesitas al menos un miembro activo y un fondo.{" "}
+        <Link href="/admin/personas?nueva=1" className="underline">
           Crear persona
         </Link>
         {" · "}
-        <Link href="/admin/fondos/nuevo" className="underline">
+        <Link href="/admin/fondos?nueva=1" className="underline">
           Crear fondo
         </Link>
       </p>
@@ -59,7 +74,7 @@ export function NewAccountForm({ persons, pools }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-md flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {error ? (
         <div
           role="alert"
@@ -70,11 +85,11 @@ export function NewAccountForm({ persons, pools }: Props) {
       ) : null}
 
       <div>
-        <label htmlFor="person_id" className={labelClass}>
+        <label htmlFor="acc_person_id" className={labelClass}>
           Persona
         </label>
         <select
-          id="person_id"
+          id="acc_person_id"
           name="person_id"
           required
           className={selectClass}
@@ -90,11 +105,11 @@ export function NewAccountForm({ persons, pools }: Props) {
       </div>
 
       <div>
-        <label htmlFor="liquidity_pool_id" className={labelClass}>
+        <label htmlFor="acc_liquidity_pool_id" className={labelClass}>
           Fondo vinculado
         </label>
         <select
-          id="liquidity_pool_id"
+          id="acc_liquidity_pool_id"
           name="liquidity_pool_id"
           required
           className={selectClass}
@@ -109,27 +124,24 @@ export function NewAccountForm({ persons, pools }: Props) {
         </select>
       </div>
 
-      <div>
-        <label htmlFor="currency" className={labelClass}>
-          Moneda
-        </label>
-        <input
-          id="currency"
-          name="currency"
-          defaultValue="MXN"
-          maxLength={3}
-          className={inputClass}
-          disabled={isPending}
-        />
-      </div>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Todos los montos se registran en dólares estadounidenses (USD).
+      </p>
 
       <div className="flex flex-wrap gap-3">
         <button type="submit" disabled={isPending} className={buttonPrimaryClass}>
           Crear cuenta
         </button>
-        <Link href="/admin/cuentas-ahorro" className={buttonSecondaryClass}>
-          Cancelar
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className={buttonSecondaryClass}
+          >
+            Cancelar
+          </button>
+        ) : null}
       </div>
     </form>
   )

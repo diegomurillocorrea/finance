@@ -2,6 +2,10 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
 import { getSavingsAccountBalance } from "@/lib/actions/balances"
+import {
+  labelSavingsAccountStatus,
+  labelSavingsTransactionType,
+} from "@/lib/constants/labels-es"
 import { formatMoney } from "@/lib/format/money"
 import type { SavingsAccountRow } from "@/lib/database.types"
 import {
@@ -76,7 +80,7 @@ export default async function CuentaDetallePage({ params }: PageProps) {
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {account.persons?.full_name ?? "Persona"} · Fondo:{" "}
-          {account.liquidity_pools?.name ?? "—"} · {account.currency}
+          {account.liquidity_pools?.name ?? "—"} · USD
         </p>
       </div>
 
@@ -84,11 +88,14 @@ export default async function CuentaDetallePage({ params }: PageProps) {
         <div>
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Saldo</p>
           <p className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-            {formatMoney(balance, account.currency)}
+            {formatMoney(balance)}
           </p>
         </div>
         <div className="text-sm text-zinc-600 dark:text-zinc-400">
-          Estado: <span className="font-medium text-zinc-800 dark:text-zinc-200">{account.status}</span>
+          Estado:{" "}
+          <span className="font-medium text-zinc-800 dark:text-zinc-200">
+            {labelSavingsAccountStatus(account.status)}
+          </span>
         </div>
       </section>
 
@@ -128,9 +135,9 @@ export default async function CuentaDetallePage({ params }: PageProps) {
                     <td className={`${tdClass} tabular-nums text-zinc-600`}>
                       {new Date(t.occurred_at).toLocaleString("es-MX")}
                     </td>
-                    <td className={tdClass}>{t.type}</td>
+                    <td className={tdClass}>{labelSavingsTransactionType(t.type)}</td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(Number(t.amount), account.currency)}
+                      {formatMoney(Number(t.amount))}
                     </td>
                     <td className={tdClass}>{t.description ?? "—"}</td>
                   </tr>

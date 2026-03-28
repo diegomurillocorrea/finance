@@ -18,12 +18,19 @@ interface Option {
   name?: string
 }
 
-interface Props {
+export interface NewLoanFormProps {
   persons: Option[]
   pools: Option[]
+  onSuccess?: (loanId: string) => void
+  onCancel?: () => void
 }
 
-export function NewLoanForm({ persons, pools }: Props) {
+export function NewLoanForm({
+  persons,
+  pools,
+  onSuccess,
+  onCancel,
+}: NewLoanFormProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -31,15 +38,23 @@ export function NewLoanForm({ persons, pools }: Props) {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
-    const fd = new FormData(e.currentTarget)
+    const form = e.currentTarget
+    const fd = new FormData(form)
     startTransition(async () => {
       const r = await createLoan(fd)
-      if (r.ok) {
-        router.push(`/admin/prestamos/${r.data.id}`)
-        router.refresh()
+      if (!r.ok) {
+        setError(r.message)
         return
       }
-      setError(r.message)
+      if (onSuccess) {
+        onSuccess(r.data.id)
+        return
+      }
+      if (form.isConnected) {
+        form.reset()
+      }
+      router.push(`/admin/prestamos/${r.data.id}`)
+      router.refresh()
     })
   }
 
@@ -47,11 +62,11 @@ export function NewLoanForm({ persons, pools }: Props) {
     return (
       <p className="text-sm text-amber-800 dark:text-amber-200">
         Necesitas personas y fondos.{" "}
-        <Link href="/admin/personas/nuevo" className="underline">
+        <Link href="/admin/personas?nueva=1" className="underline">
           Persona
         </Link>
         {" · "}
-        <Link href="/admin/fondos/nuevo" className="underline">
+        <Link href="/admin/fondos?nueva=1" className="underline">
           Fondo
         </Link>
       </p>
@@ -59,7 +74,7 @@ export function NewLoanForm({ persons, pools }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-xl flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {error ? (
         <div
           role="alert"
@@ -70,11 +85,11 @@ export function NewLoanForm({ persons, pools }: Props) {
       ) : null}
 
       <div>
-        <label htmlFor="borrower_id" className={labelClass}>
+        <label htmlFor="nl_borrower_id" className={labelClass}>
           Prestatario
         </label>
         <select
-          id="borrower_id"
+          id="nl_borrower_id"
           name="borrower_id"
           required
           className={selectClass}
@@ -90,11 +105,11 @@ export function NewLoanForm({ persons, pools }: Props) {
       </div>
 
       <div>
-        <label htmlFor="liquidity_pool_id" className={labelClass}>
+        <label htmlFor="nl_liquidity_pool_id" className={labelClass}>
           Fondo (desembolso saldrá de aquí)
         </label>
         <select
-          id="liquidity_pool_id"
+          id="nl_liquidity_pool_id"
           name="liquidity_pool_id"
           required
           className={selectClass}
@@ -111,11 +126,11 @@ export function NewLoanForm({ persons, pools }: Props) {
 
       <div className="grid gap-4 tablet:grid-cols-2">
         <div>
-          <label htmlFor="principal" className={labelClass}>
+          <label htmlFor="nl_principal" className={labelClass}>
             Monto principal
           </label>
           <input
-            id="principal"
+            id="nl_principal"
             name="principal"
             type="text"
             inputMode="decimal"
@@ -125,28 +140,28 @@ export function NewLoanForm({ persons, pools }: Props) {
           />
         </div>
         <div>
-          <label htmlFor="annual_interest_rate" className={labelClass}>
-            Tasa anual (%)
+          <label htmlFor="nl_monthly_interest_rate" className={labelClass}>
+            Tasa mensual (%)
           </label>
           <input
-            id="annual_interest_rate"
-            name="annual_interest_rate"
+            id="nl_monthly_interest_rate"
+            name="monthly_interest_rate"
             type="text"
             inputMode="decimal"
             required
             className={inputClass}
-            placeholder="24"
+            placeholder="2"
             disabled={isPending}
           />
         </div>
       </div>
 
       <div>
-        <label htmlFor="term_months" className={labelClass}>
-          Plazo (meses)
+        <label htmlFor="nl_term_months" className={labelClass}>
+          Plazo referencial (meses)
         </label>
         <input
-          id="term_months"
+          id="nl_term_months"
           name="term_months"
           type="number"
           min={1}
@@ -154,15 +169,20 @@ export function NewLoanForm({ persons, pools }: Props) {
           required
           className={inputClass}
           disabled={isPending}
+          aria-describedby="nl_term_months_hint"
         />
+        <p id="nl_term_months_hint" className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          No fija cuotas: el préstamo se liquida con abonos a capital; el interés es sobre el
+          saldo pendiente.
+        </p>
       </div>
 
       <div>
-        <label htmlFor="payment_frequency" className={labelClass}>
+        <label htmlFor="nl_payment_frequency" className={labelClass}>
           Frecuencia de pago
         </label>
         <select
-          id="payment_frequency"
+          id="nl_payment_frequency"
           name="payment_frequency"
           defaultValue="monthly"
           className={selectClass}
@@ -174,17 +194,23 @@ export function NewLoanForm({ persons, pools }: Props) {
       </div>
 
       <div>
-        <label htmlFor="purpose" className={labelClass}>
+        <label htmlFor="nl_purpose" className={labelClass}>
           Finalidad (opcional)
         </label>
-        <input id="purpose" name="purpose" className={inputClass} disabled={isPending} />
+        <input id="nl_purpose" name="purpose" className={inputClass} disabled={isPending} />
       </div>
 
       <div>
-        <label htmlFor="status" className={labelClass}>
+        <label htmlFor="nl_status" className={labelClass}>
           Estado inicial
         </label>
-        <select id="status" name="status" defaultValue="draft" className={selectClass} disabled={isPending}>
+        <select
+          id="nl_status"
+          name="status"
+          defaultValue="draft"
+          className={selectClass}
+          disabled={isPending}
+        >
           <option value="draft">Borrador</option>
           <option value="pending_approval">Pendiente de aprobación</option>
         </select>
@@ -194,9 +220,16 @@ export function NewLoanForm({ persons, pools }: Props) {
         <button type="submit" disabled={isPending} className={buttonPrimaryClass}>
           Guardar préstamo
         </button>
-        <Link href="/admin/prestamos" className={buttonSecondaryClass}>
-          Cancelar
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className={buttonSecondaryClass}
+          >
+            Cancelar
+          </button>
+        ) : null}
       </div>
     </form>
   )

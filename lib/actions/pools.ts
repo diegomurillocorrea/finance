@@ -7,6 +7,7 @@ import {
 } from "@/lib/validations/finance"
 import { requireSupabaseUser, type ActionResult } from "@/lib/actions/auth-context"
 import { zodFirstMessage } from "@/lib/validations/zod-message"
+import { APP_CURRENCY_CODE } from "@/lib/constants/currency"
 
 export async function createLiquidityPool(
   formData: FormData
@@ -16,7 +17,6 @@ export async function createLiquidityPool(
 
   const parsed = poolCreateSchema.safeParse({
     name: String(formData.get("name") ?? ""),
-    currency: (String(formData.get("currency") ?? "MXN") || "MXN").toUpperCase(),
     is_default: formData.get("is_default") === "on" || formData.get("is_default") === "true",
   })
 
@@ -35,7 +35,7 @@ export async function createLiquidityPool(
     .from("liquidity_pools")
     .insert({
       name: v.name.trim(),
-      currency: v.currency,
+      currency: APP_CURRENCY_CODE,
       is_default: !!v.is_default,
     })
     .select("id")
@@ -59,7 +59,6 @@ export async function updateLiquidityPool(
   const parsed = poolUpdateSchema.safeParse({
     id: String(formData.get("id") ?? ""),
     name: String(formData.get("name") ?? ""),
-    currency: (String(formData.get("currency") ?? "MXN") || "MXN").toUpperCase(),
     is_default: formData.get("is_default") === "on" || formData.get("is_default") === "true",
   })
 
@@ -78,7 +77,7 @@ export async function updateLiquidityPool(
     .from("liquidity_pools")
     .update({
       name: v.name.trim(),
-      currency: v.currency,
+      currency: APP_CURRENCY_CODE,
       is_default: !!v.is_default,
     })
     .eq("id", v.id)
