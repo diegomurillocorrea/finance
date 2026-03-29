@@ -6,8 +6,9 @@ import { cardClass } from "@/lib/form-classes"
 
 const quickLinks = [
   { href: "/admin/personas", label: "Personas", desc: "Altas y edición" },
+  { href: "/admin/bancos", label: "Bancos", desc: "Catálogo de bancos" },
   { href: "/admin/fondos", label: "Fondos", desc: "Liquidez y saldos" },
-  { href: "/admin/cuentas-ahorro", label: "Cuentas de ahorro", desc: "Depósitos y retiros" },
+  { href: "/admin/cuentas-ahorro", label: "Ahorrantes", desc: "Depósitos y retiros" },
   { href: "/admin/prestamos", label: "Préstamos", desc: "Desembolsos y pagos" },
   { href: "/admin/movimientos-fondo", label: "Mov. fondo", desc: "Auditoría de caja" },
 ] as const

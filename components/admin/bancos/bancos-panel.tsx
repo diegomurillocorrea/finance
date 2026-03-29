@@ -2,11 +2,10 @@
 
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
-import type { BankRow, PersonRow } from "@/lib/database.types"
-import { labelPersonStatus } from "@/lib/constants/labels-es"
-import { deletePerson } from "@/lib/actions/persons"
-import { PersonCreateForm } from "@/components/admin/personas/person-create-form"
-import { PersonEditForm } from "@/components/admin/personas/person-edit-form"
+import type { BankRow } from "@/lib/database.types"
+import { deleteBank } from "@/lib/actions/banks"
+import { BankCreateForm } from "@/components/admin/bancos/bank-create-form"
+import { BankEditForm } from "@/components/admin/bancos/bank-edit-form"
 import { Modal } from "@/components/ui/modal"
 import {
   buttonDangerClass,
@@ -19,27 +18,31 @@ import {
   thClass,
 } from "@/lib/form-classes"
 
-interface PersonasPanelProps {
-  persons: PersonRow[]
-  banks: Pick<BankRow, "id" | "name">[]
+const formatCreatedAt = (iso: string) =>
+  new Intl.DateTimeFormat("es", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso))
+
+interface BancosPanelProps {
+  banks: BankRow[]
   errorMessage: string | null
   initialOpenCreate?: boolean
   initialEditId?: string | null
 }
 
-export function PersonasPanel({
-  persons,
+export function BancosPanel({
   banks,
   errorMessage,
   initialOpenCreate = false,
   initialEditId = null,
-}: PersonasPanelProps) {
+}: BancosPanelProps) {
   const router = useRouter()
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [editingPerson, setEditingPerson] = useState<PersonRow | null>(null)
+  const [editingBank, setEditingBank] = useState<BankRow | null>(null)
   const [createFormKey, setCreateFormKey] = useState(0)
-  const [personToDelete, setPersonToDelete] = useState<PersonRow | null>(null)
+  const [bankToDelete, setBankToDelete] = useState<BankRow | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDeletePending, startDeleteTransition] = useTransition()
 
@@ -47,19 +50,19 @@ export function PersonasPanel({
     if (initialOpenCreate) {
       setCreateFormKey((k) => k + 1)
       setCreateOpen(true)
-      router.replace("/admin/personas", { scroll: false })
+      router.replace("/admin/bancos", { scroll: false })
     }
   }, [initialOpenCreate, router])
 
   useEffect(() => {
     if (!initialEditId) return
-    const p = persons.find((x) => x.id === initialEditId)
-    if (p) {
-      setEditingPerson(p)
+    const b = banks.find((x) => x.id === initialEditId)
+    if (b) {
+      setEditingBank(b)
       setEditOpen(true)
     }
-    router.replace("/admin/personas", { scroll: false })
-  }, [initialEditId, persons, router])
+    router.replace("/admin/bancos", { scroll: false })
+  }, [initialEditId, banks, router])
 
   const handleOpenCreate = useCallback(() => {
     setCreateFormKey((k) => k + 1)
@@ -72,76 +75,78 @@ export function PersonasPanel({
 
   const handleCreateSuccess = useCallback(() => {
     setCreateOpen(false)
-    router.replace("/admin/personas", { scroll: false })
+    router.replace("/admin/bancos", { scroll: false })
     router.refresh()
   }, [router])
 
-  const handleOpenEdit = useCallback((p: PersonRow) => {
-    setEditingPerson(p)
+  const handleOpenEdit = useCallback((b: BankRow) => {
+    setEditingBank(b)
     setEditOpen(true)
   }, [])
 
   const handleCloseEdit = useCallback(() => {
     setEditOpen(false)
-    setEditingPerson(null)
+    setEditingBank(null)
   }, [])
 
   const handleEditSuccess = useCallback(() => {
     setEditOpen(false)
-    setEditingPerson(null)
-    router.replace("/admin/personas", { scroll: false })
+    setEditingBank(null)
+    router.replace("/admin/bancos", { scroll: false })
     router.refresh()
   }, [router])
 
-  const handleOpenDeletePerson = useCallback((p: PersonRow) => {
-    if (editingPerson?.id === p.id) {
-      setEditOpen(false)
-      setEditingPerson(null)
-    }
-    setDeleteError(null)
-    setPersonToDelete(p)
-  }, [editingPerson])
+  const handleOpenDelete = useCallback(
+    (b: BankRow) => {
+      if (editingBank?.id === b.id) {
+        setEditOpen(false)
+        setEditingBank(null)
+      }
+      setDeleteError(null)
+      setBankToDelete(b)
+    },
+    [editingBank]
+  )
 
   const handleCloseDeleteModal = useCallback(() => {
     if (isDeletePending) return
-    setPersonToDelete(null)
+    setBankToDelete(null)
     setDeleteError(null)
   }, [isDeletePending])
 
-  const handleConfirmDeletePerson = useCallback(() => {
-    if (!personToDelete) return
+  const handleConfirmDelete = useCallback(() => {
+    if (!bankToDelete) return
     setDeleteError(null)
     startDeleteTransition(async () => {
-      const result = await deletePerson(personToDelete.id)
+      const result = await deleteBank(bankToDelete.id)
       if (result.ok) {
-        setPersonToDelete(null)
-        router.replace("/admin/personas", { scroll: false })
+        setBankToDelete(null)
+        router.replace("/admin/bancos", { scroll: false })
         router.refresh()
         return
       }
       setDeleteError(result.message)
     })
-  }, [personToDelete, router])
+  }, [bankToDelete, router])
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 tablet:flex-row tablet:items-center tablet:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Personas
+            Bancos
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Ahorradores y prestatarios. Puedes vincular la misma persona a cuenta
-            de ahorro y préstamos.
+            Catálogo con identificador, nombre y fecha de registro.
           </p>
         </div>
         <button
           type="button"
           onClick={handleOpenCreate}
           className={buttonPrimaryClass}
-          aria-label="Registrar nueva persona"
+          aria-label="Registrar nuevo banco"
         >
-          Nueva persona
+          Nuevo banco
         </button>
       </div>
 
@@ -152,57 +157,53 @@ export function PersonasPanel({
       ) : null}
 
       <section className={cardClass}>
-        {!persons.length ? (
+        {!banks.length ? (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            No hay personas. Crea la primera para comenzar.
+            No hay bancos registrados.
           </p>
         ) : (
           <div className={tableWrapClass}>
             <table className={tableClass}>
               <thead>
                 <tr>
+                  <th className={thClass}>ID</th>
                   <th className={thClass}>Nombre</th>
-                  <th className={thClass}>Contacto</th>
-                  <th className={thClass}>Documento</th>
-                  <th className={thClass}>Estado</th>
+                  <th className={thClass}>Creado</th>
                   <th className={thClass} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {persons.map((p) => (
-                  <tr key={p.id}>
+                {banks.map((b) => (
+                  <tr key={b.id}>
+                    <td className={`${tdClass} max-w-[140px]`}>
+                      <span
+                        className="block truncate font-mono text-xs text-zinc-600 dark:text-zinc-400"
+                        title={b.id}
+                      >
+                        {b.id}
+                      </span>
+                    </td>
                     <td className={tdClass}>
                       <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                        {p.full_name}
+                        {b.name}
                       </span>
-                      {p.is_member ? (
-                        <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400">
-                          miembro
-                        </span>
-                      ) : null}
                     </td>
-                    <td className={tdClass}>
-                      <div className="text-zinc-600 dark:text-zinc-400">{p.email ?? "—"}</div>
-                      <div className="text-zinc-500 dark:text-zinc-500">{p.phone ?? ""}</div>
-                    </td>
-                    <td className={tdClass}>{p.document_number ?? "—"}</td>
-                    <td className={tdClass}>
-                      {labelPersonStatus(p.status)}
+                    <td className={`${tdClass} text-sm text-zinc-600 dark:text-zinc-400`}>
+                      {formatCreatedAt(b.created_at)}
                     </td>
                     <td className={`${tdClass} text-right`}>
-                      <div className="flex flex-wrap items-center justify-end gap-3">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => handleOpenEdit(p)}
-                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                          onClick={() => handleOpenEdit(b)}
+                          className="font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
                         >
                           Editar
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleOpenDeletePerson(p)}
-                          className="font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                          aria-label={`Eliminar a ${p.full_name}`}
+                          onClick={() => handleOpenDelete(b)}
+                          className="font-medium text-red-600 hover:text-red-700 dark:text-red-400"
                         >
                           Eliminar
                         </button>
@@ -219,28 +220,26 @@ export function PersonasPanel({
       <Modal
         open={createOpen}
         onClose={handleCloseCreate}
-        title="Nueva persona"
-        titleId="modal-nueva-persona-title"
+        title="Nuevo banco"
+        titleId="modal-nuevo-banco-title"
       >
-        <PersonCreateForm
+        <BankCreateForm
           key={createFormKey}
-          banks={banks}
           onSuccess={handleCreateSuccess}
           onCancel={handleCloseCreate}
         />
       </Modal>
 
       <Modal
-        open={editOpen && editingPerson !== null}
+        open={editOpen && editingBank !== null}
         onClose={handleCloseEdit}
-        title="Editar persona"
-        titleId="modal-editar-persona-title"
+        title="Editar banco"
+        titleId="modal-editar-banco-title"
       >
-        {editingPerson ? (
-          <PersonEditForm
-            key={editingPerson.id}
-            person={editingPerson}
-            banks={banks}
+        {editingBank ? (
+          <BankEditForm
+            key={editingBank.id}
+            bank={editingBank}
             onSuccess={handleEditSuccess}
             onCancel={handleCloseEdit}
           />
@@ -248,33 +247,26 @@ export function PersonasPanel({
       </Modal>
 
       <Modal
-        open={personToDelete !== null}
+        open={bankToDelete !== null}
         onClose={handleCloseDeleteModal}
-        title="Eliminar persona"
-        titleId="modal-eliminar-persona-title"
-        panelClassName="max-w-md"
+        title="Eliminar banco"
+        titleId="modal-eliminar-banco-title"
       >
-        {personToDelete ? (
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
-              ¿Seguro que quieres eliminar a{" "}
+        {bankToDelete ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              ¿Eliminar{" "}
               <span className="font-semibold text-zinc-900 dark:text-zinc-50">
-                {personToDelete.full_name}
+                {bankToDelete.name}
               </span>
               ? Esta acción no se puede deshacer.
             </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Solo es posible si la persona no tiene cuentas de ahorro ni préstamos registrados.
-            </p>
             {deleteError ? (
-              <div
-                role="alert"
-                className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
-              >
+              <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                 {deleteError}
-              </div>
+              </p>
             ) : null}
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={handleCloseDeleteModal}
@@ -285,7 +277,7 @@ export function PersonasPanel({
               </button>
               <button
                 type="button"
-                onClick={handleConfirmDeletePerson}
+                onClick={handleConfirmDelete}
                 disabled={isDeletePending}
                 className={buttonDangerClass}
               >

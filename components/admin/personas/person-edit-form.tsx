@@ -1,7 +1,7 @@
 "use client"
 
 import { DuiDocumentNumberField } from "@/components/dui-document-number-field"
-import type { PersonRow } from "@/lib/database.types"
+import type { BankRow, PersonRow } from "@/lib/database.types"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { updatePerson } from "@/lib/actions/persons"
@@ -15,11 +15,12 @@ import {
 
 interface PersonEditFormProps {
   person: PersonRow
+  banks: Pick<BankRow, "id" | "name">[]
   onSuccess?: () => void
   onCancel?: () => void
 }
 
-export function PersonEditForm({ person, onSuccess, onCancel }: PersonEditFormProps) {
+export function PersonEditForm({ person, banks, onSuccess, onCancel }: PersonEditFormProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -124,6 +125,56 @@ export function PersonEditForm({ person, onSuccess, onCancel }: PersonEditFormPr
             defaultValue={person.document_number}
             disabled={isPending}
           />
+        </div>
+      </div>
+
+      <div className="grid gap-4 tablet:grid-cols-2">
+        <div>
+          <label htmlFor="edit_bank_id" className={labelClass}>
+            Banco
+          </label>
+          <select
+            id="edit_bank_id"
+            name="bank_id"
+            className={selectClass}
+            disabled={isPending}
+            defaultValue={person.bank_id ?? ""}
+            aria-label="Banco de la cuenta de ahorros"
+          >
+            <option value="">Sin cuenta bancaria</option>
+            {banks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          {!banks.length ? (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Registra bancos en Administración → Bancos para poder asociarlos aquí.
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <label htmlFor="edit_bank_account_number" className={labelClass}>
+            Cuenta de banco
+          </label>
+          <input
+            id="edit_bank_account_number"
+            name="bank_account_number"
+            type="text"
+            autoComplete="off"
+            placeholder="Número de cuenta de ahorros"
+            defaultValue={person.bank_account_number ?? ""}
+            className={inputClass}
+            disabled={isPending}
+            aria-describedby="edit_bank_account_number_hint"
+          />
+          <p
+            id="edit_bank_account_number_hint"
+            className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
+          >
+            Opcional. Si la completas, elige también el banco.
+          </p>
         </div>
       </div>
 

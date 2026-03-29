@@ -21,6 +21,8 @@ export async function createPerson(
     phone: String(formData.get("phone") ?? ""),
     document_type: String(formData.get("document_type") ?? ""),
     document_number: String(formData.get("document_number") ?? ""),
+    bank_id: String(formData.get("bank_id") ?? ""),
+    bank_account_number: String(formData.get("bank_account_number") ?? ""),
     is_member: formData.get("is_member") === "on" || formData.get("is_member") === "true",
     notes: String(formData.get("notes") ?? ""),
   })
@@ -31,12 +33,19 @@ export async function createPerson(
       issues.full_name?.[0] ??
       issues.email?.[0] ??
       issues.document_number?.[0] ??
+      issues.bank_account_number?.[0] ??
       zodFirstMessage(parsed.error)
     return { ok: false, message: first }
   }
 
   const v = parsed.data
   const { supabase } = auth.data
+
+  const bankIdTrim = v.bank_id?.trim() ?? ""
+  const bankAccountTrim = v.bank_account_number?.trim() ?? ""
+  const bankId =
+    bankIdTrim && z.string().uuid().safeParse(bankIdTrim).success ? bankIdTrim : null
+  const bankAccount = bankAccountTrim || null
 
   const { data, error } = await supabase
     .from("persons")
@@ -46,6 +55,8 @@ export async function createPerson(
       phone: v.phone?.trim() || null,
       document_type: v.document_type?.trim() || null,
       document_number: v.document_number?.trim() || null,
+      bank_id: bankId,
+      bank_account_number: bankAccount,
       is_member: v.is_member ?? true,
       notes: v.notes?.trim() || null,
       status: "active",
@@ -75,6 +86,8 @@ export async function updatePerson(
     phone: String(formData.get("phone") ?? ""),
     document_type: String(formData.get("document_type") ?? ""),
     document_number: String(formData.get("document_number") ?? ""),
+    bank_id: String(formData.get("bank_id") ?? ""),
+    bank_account_number: String(formData.get("bank_account_number") ?? ""),
     is_member: formData.get("is_member") === "on" || formData.get("is_member") === "true",
     notes: String(formData.get("notes") ?? ""),
     status: formData.get("status") === "inactive" ? "inactive" : "active",
@@ -86,12 +99,19 @@ export async function updatePerson(
       issues.full_name?.[0] ??
       issues.email?.[0] ??
       issues.document_number?.[0] ??
+      issues.bank_account_number?.[0] ??
       zodFirstMessage(parsed.error)
     return { ok: false, message: first }
   }
 
   const v = parsed.data
   const { supabase } = auth.data
+
+  const bankIdTrim = v.bank_id?.trim() ?? ""
+  const bankAccountTrim = v.bank_account_number?.trim() ?? ""
+  const bankId =
+    bankIdTrim && z.string().uuid().safeParse(bankIdTrim).success ? bankIdTrim : null
+  const bankAccount = bankAccountTrim || null
 
   const { error } = await supabase
     .from("persons")
@@ -101,6 +121,8 @@ export async function updatePerson(
       phone: v.phone?.trim() || null,
       document_type: v.document_type?.trim() || null,
       document_number: v.document_number?.trim() || null,
+      bank_id: bankId,
+      bank_account_number: bankAccount,
       is_member: v.is_member ?? true,
       notes: v.notes?.trim() || null,
       status: v.status,

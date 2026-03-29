@@ -36,8 +36,9 @@ function UserDisplay() {
 const NAV_ITEMS = [
   { href: "/admin", label: "Inicio", exact: true },
   { href: "/admin/personas", label: "Personas", exact: false },
+  { href: "/admin/bancos", label: "Bancos", exact: false },
   { href: "/admin/fondos", label: "Fondos", exact: false },
-  { href: "/admin/cuentas-ahorro", label: "Cuentas de ahorro", exact: false },
+  { href: "/admin/cuentas-ahorro", label: "Ahorrantes", exact: false },
   { href: "/admin/prestamos", label: "Préstamos", exact: false },
   { href: "/admin/movimientos-fondo", label: "Mov. fondo", exact: false },
 ] as const

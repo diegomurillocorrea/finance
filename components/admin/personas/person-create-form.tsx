@@ -1,5 +1,6 @@
 "use client"
 
+import type { BankRow } from "@/lib/database.types"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { createPerson } from "@/lib/actions/persons"
@@ -13,11 +14,12 @@ import {
 } from "@/lib/form-classes"
 
 export interface PersonCreateFormProps {
+  banks: Pick<BankRow, "id" | "name">[]
   onSuccess?: () => void
   onCancel?: () => void
 }
 
-export function PersonCreateForm({ onSuccess, onCancel }: PersonCreateFormProps) {
+export function PersonCreateForm({ banks, onSuccess, onCancel }: PersonCreateFormProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -123,6 +125,55 @@ export function PersonCreateForm({ onSuccess, onCancel }: PersonCreateFormProps)
             inputClass={inputClass}
             disabled={isPending}
           />
+        </div>
+      </div>
+
+      <div className="grid gap-4 tablet:grid-cols-2">
+        <div>
+          <label htmlFor="bank_id" className={labelClass}>
+            Banco
+          </label>
+          <select
+            id="bank_id"
+            name="bank_id"
+            className={selectClass}
+            disabled={isPending}
+            defaultValue=""
+            aria-label="Banco de la cuenta de ahorros"
+          >
+            <option value="">Sin cuenta bancaria</option>
+            {banks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          {!banks.length ? (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Registra bancos en Administración → Bancos para poder asociarlos aquí.
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <label htmlFor="bank_account_number" className={labelClass}>
+            Cuenta de banco
+          </label>
+          <input
+            id="bank_account_number"
+            name="bank_account_number"
+            type="text"
+            autoComplete="off"
+            placeholder="Número de cuenta de ahorros"
+            className={inputClass}
+            disabled={isPending}
+            aria-describedby="bank_account_number_hint"
+          />
+          <p
+            id="bank_account_number_hint"
+            className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
+          >
+            Opcional. Si la completas, elige también el banco.
+          </p>
         </div>
       </div>
 

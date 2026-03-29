@@ -31,11 +31,19 @@ export interface PersonRow {
   phone: string | null
   document_type: string | null
   document_number: string | null
+  bank_id: string | null
+  bank_account_number: string | null
   is_member: boolean
   status: PersonStatus
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface BankRow {
+  id: string
+  name: string
+  created_at: string
 }
 
 export interface LiquidityPoolRow {

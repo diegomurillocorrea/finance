@@ -73,7 +73,7 @@ export default async function CuentaDetallePage({ params }: PageProps) {
           href="/admin/cuentas-ahorro"
           className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
         >
-          ← Cuentas de ahorro
+          ← Ahorrantes
         </Link>
         <h1 className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-50">
           Cuenta de ahorro

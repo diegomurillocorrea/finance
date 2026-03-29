@@ -10,6 +10,8 @@ export const personCreateSchema = z
     phone: z.string().optional().or(z.literal("")),
     document_type: z.string().optional().or(z.literal("")),
     document_number: z.string().optional().or(z.literal("")),
+    bank_id: z.string().optional().or(z.literal("")),
+    bank_account_number: z.string().max(120).optional().or(z.literal("")),
     is_member: z.boolean().optional(),
     notes: z.string().optional().or(z.literal("")),
   })
@@ -29,10 +31,33 @@ export const personCreateSchema = z
     },
     { message: "El número debe tener el formato DUI: 00000000-0", path: ["document_number"] }
   )
+  .refine(
+    (d) => {
+      const acc = d.bank_account_number?.trim() ?? ""
+      const bid = d.bank_id?.trim() ?? ""
+      if (!acc && !bid) return true
+      if (!bid || !z.string().uuid().safeParse(bid).success) return false
+      if (!acc) return false
+      return true
+    },
+    {
+      message:
+        "Si indicas cuenta bancaria, elige un banco y escribe el número; si no aplica, deja ambos vacíos",
+      path: ["bank_account_number"],
+    }
+  )
 
 export const personUpdateSchema = personCreateSchema.extend({
   id: z.string().uuid(),
   status: z.enum(["active", "inactive"]),
+})
+
+export const bankCreateSchema = z.object({
+  name: z.string().min(1, "Nombre del banco requerido"),
+})
+
+export const bankUpdateSchema = bankCreateSchema.extend({
+  id: z.string().uuid(),
 })
 
 export const poolCreateSchema = z.object({
