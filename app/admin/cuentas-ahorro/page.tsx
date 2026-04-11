@@ -27,7 +27,7 @@ export default async function CuentasAhorroPage({ searchParams }: PageProps) {
       .order("opened_at", { ascending: false }),
     supabase
       .from("persons")
-      .select("id, full_name")
+      .select("id, full_name, phone")
       .eq("status", "active")
       .eq("is_member", true)
       .order("full_name"),

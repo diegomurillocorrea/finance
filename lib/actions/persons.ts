@@ -17,10 +17,7 @@ export async function createPerson(
 
   const parsed = personCreateSchema.safeParse({
     full_name: String(formData.get("full_name") ?? ""),
-    email: String(formData.get("email") ?? ""),
     phone: String(formData.get("phone") ?? ""),
-    document_type: String(formData.get("document_type") ?? ""),
-    document_number: String(formData.get("document_number") ?? ""),
     bank_id: String(formData.get("bank_id") ?? ""),
     bank_account_number: String(formData.get("bank_account_number") ?? ""),
     is_member: formData.get("is_member") === "on" || formData.get("is_member") === "true",
@@ -31,8 +28,6 @@ export async function createPerson(
     const issues = parsed.error.flatten().fieldErrors
     const first =
       issues.full_name?.[0] ??
-      issues.email?.[0] ??
-      issues.document_number?.[0] ??
       issues.bank_account_number?.[0] ??
       zodFirstMessage(parsed.error)
     return { ok: false, message: first }
@@ -51,10 +46,7 @@ export async function createPerson(
     .from("persons")
     .insert({
       full_name: v.full_name.trim(),
-      email: v.email?.trim() || null,
       phone: v.phone?.trim() || null,
-      document_type: v.document_type?.trim() || null,
-      document_number: v.document_number?.trim() || null,
       bank_id: bankId,
       bank_account_number: bankAccount,
       is_member: v.is_member ?? true,
@@ -82,10 +74,7 @@ export async function updatePerson(
   const parsed = personUpdateSchema.safeParse({
     id: String(formData.get("id") ?? ""),
     full_name: String(formData.get("full_name") ?? ""),
-    email: String(formData.get("email") ?? ""),
     phone: String(formData.get("phone") ?? ""),
-    document_type: String(formData.get("document_type") ?? ""),
-    document_number: String(formData.get("document_number") ?? ""),
     bank_id: String(formData.get("bank_id") ?? ""),
     bank_account_number: String(formData.get("bank_account_number") ?? ""),
     is_member: formData.get("is_member") === "on" || formData.get("is_member") === "true",
@@ -97,8 +86,6 @@ export async function updatePerson(
     const issues = parsed.error.flatten().fieldErrors
     const first =
       issues.full_name?.[0] ??
-      issues.email?.[0] ??
-      issues.document_number?.[0] ??
       issues.bank_account_number?.[0] ??
       zodFirstMessage(parsed.error)
     return { ok: false, message: first }
@@ -117,10 +104,7 @@ export async function updatePerson(
     .from("persons")
     .update({
       full_name: v.full_name.trim(),
-      email: v.email?.trim() || null,
       phone: v.phone?.trim() || null,
-      document_type: v.document_type?.trim() || null,
-      document_number: v.document_number?.trim() || null,
       bank_id: bankId,
       bank_account_number: bankAccount,
       is_member: v.is_member ?? true,

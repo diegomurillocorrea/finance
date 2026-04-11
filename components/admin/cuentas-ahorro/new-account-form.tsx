@@ -4,10 +4,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { createSavingsAccount } from "@/lib/actions/savings"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import {
   buttonPrimaryClass,
   buttonSecondaryClass,
-  inputClass,
   labelClass,
   selectClass,
 } from "@/lib/form-classes"
@@ -16,6 +16,7 @@ interface Option {
   id: string
   full_name?: string
   name?: string
+  phone?: string | null
 }
 
 export interface NewAccountFormProps {
@@ -74,7 +75,10 @@ export function NewAccountForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form
+      onSubmit={handleSubmit}
+      className="mx-auto flex w-full max-w-md flex-col gap-5"
+    >
       {error ? (
         <div
           role="alert"
@@ -84,25 +88,20 @@ export function NewAccountForm({
         </div>
       ) : null}
 
-      <div>
-        <label htmlFor="acc_person_id" className={labelClass}>
-          Persona
-        </label>
-        <select
-          id="acc_person_id"
-          name="person_id"
-          required
-          className={selectClass}
-          disabled={isPending}
-        >
-          <option value="">Selecciona…</option>
-          {persons.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.full_name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SearchableSelect
+        id="acc_person_id"
+        name="person_id"
+        label="Persona"
+        required
+        disabled={isPending}
+        placeholder="Buscar por nombre…"
+        emptyMessage="Ninguna persona coincide. Prueba otro texto."
+        options={persons.map((p) => ({
+          id: p.id,
+          label: p.full_name ?? p.id,
+          description: p.phone?.trim() ? `Tel. ${p.phone}` : undefined,
+        }))}
+      />
 
       <div>
         <label htmlFor="acc_liquidity_pool_id" className={labelClass}>
@@ -128,10 +127,7 @@ export function NewAccountForm({
         Todos los montos se registran en dólares estadounidenses (USD).
       </p>
 
-      <div className="flex flex-wrap gap-3">
-        <button type="submit" disabled={isPending} className={buttonPrimaryClass}>
-          Crear cuenta
-        </button>
+      <div className="flex flex-wrap items-center justify-end gap-3 pt-1">
         {onCancel ? (
           <button
             type="button"
@@ -142,6 +138,9 @@ export function NewAccountForm({
             Cancelar
           </button>
         ) : null}
+        <button type="submit" disabled={isPending} className={buttonPrimaryClass}>
+          Crear cuenta
+        </button>
       </div>
     </form>
   )

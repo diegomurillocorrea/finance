@@ -27,10 +27,7 @@ export interface PersonRow {
   id: string
   auth_user_id: string | null
   full_name: string
-  email: string | null
   phone: string | null
-  document_type: string | null
-  document_number: string | null
   bank_id: string | null
   bank_account_number: string | null
   is_member: boolean

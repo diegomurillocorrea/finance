@@ -1,36 +1,14 @@
 import { z } from "zod"
 
-/** DUI: 8 dígitos, guion, 1 dígito verificador (ej. 00000000-0) */
-export const DUI_NUMBER_REGEX = /^\d{8}-\d$/
-
 export const personCreateSchema = z
   .object({
     full_name: z.string().min(2, "Nombre demasiado corto"),
-    email: z.string().max(200).optional().or(z.literal("")),
     phone: z.string().optional().or(z.literal("")),
-    document_type: z.string().optional().or(z.literal("")),
-    document_number: z.string().optional().or(z.literal("")),
     bank_id: z.string().optional().or(z.literal("")),
     bank_account_number: z.string().max(120).optional().or(z.literal("")),
     is_member: z.boolean().optional(),
     notes: z.string().optional().or(z.literal("")),
   })
-  .refine(
-    (d) => {
-      const e = d.email?.trim()
-      if (!e) return true
-      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
-    },
-    { message: "Email inválido", path: ["email"] }
-  )
-  .refine(
-    (d) => {
-      const n = d.document_number?.trim()
-      if (!n) return true
-      return DUI_NUMBER_REGEX.test(n)
-    },
-    { message: "El número debe tener el formato DUI: 00000000-0", path: ["document_number"] }
-  )
   .refine(
     (d) => {
       const acc = d.bank_account_number?.trim() ?? ""

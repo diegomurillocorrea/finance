@@ -4,7 +4,6 @@ import type { BankRow } from "@/lib/database.types"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { createPerson } from "@/lib/actions/persons"
-import { DuiDocumentNumberField } from "@/components/dui-document-number-field"
 import {
   buttonPrimaryClass,
   buttonSecondaryClass,
@@ -74,20 +73,6 @@ export function PersonCreateForm({ banks, onSuccess, onCancel }: PersonCreateFor
       </div>
 
       <div>
-        <label htmlFor="email" className={labelClass}>
-          Email
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          className={inputClass}
-          disabled={isPending}
-        />
-      </div>
-
-      <div>
         <label htmlFor="phone" className={labelClass}>
           Teléfono
         </label>
@@ -99,33 +84,6 @@ export function PersonCreateForm({ banks, onSuccess, onCancel }: PersonCreateFor
           className={inputClass}
           disabled={isPending}
         />
-      </div>
-
-      <div className="grid gap-4 tablet:grid-cols-2">
-        <div>
-          <label htmlFor="document_type" className={labelClass}>
-            Tipo documento
-          </label>
-          <select
-            id="document_type"
-            name="document_type"
-            className={selectClass}
-            disabled={isPending}
-            aria-label="Tipo de documento"
-          >
-            <option value="DUI">DUI</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="document_number" className={labelClass}>
-            Número de documento
-          </label>
-          <DuiDocumentNumberField
-            id="document_number"
-            inputClass={inputClass}
-            disabled={isPending}
-          />
-        </div>
       </div>
 
       <div className="grid gap-4 tablet:grid-cols-2">

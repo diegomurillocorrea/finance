@@ -1,6 +1,5 @@
 "use client"
 
-import { DuiDocumentNumberField } from "@/components/dui-document-number-field"
 import type { BankRow, PersonRow } from "@/lib/database.types"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
@@ -72,20 +71,6 @@ export function PersonEditForm({ person, banks, onSuccess, onCancel }: PersonEdi
       </div>
 
       <div>
-        <label htmlFor="edit_email" className={labelClass}>
-          Email
-        </label>
-        <input
-          id="edit_email"
-          name="email"
-          type="email"
-          defaultValue={person.email ?? ""}
-          className={inputClass}
-          disabled={isPending}
-        />
-      </div>
-
-      <div>
         <label htmlFor="edit_phone" className={labelClass}>
           Teléfono
         </label>
@@ -97,35 +82,6 @@ export function PersonEditForm({ person, banks, onSuccess, onCancel }: PersonEdi
           className={inputClass}
           disabled={isPending}
         />
-      </div>
-
-      <div className="grid gap-4 tablet:grid-cols-2">
-        <div>
-          <label htmlFor="edit_document_type" className={labelClass}>
-            Tipo documento
-          </label>
-          <select
-            id="edit_document_type"
-            name="document_type"
-            className={selectClass}
-            disabled={isPending}
-            defaultValue="DUI"
-            aria-label="Tipo de documento"
-          >
-            <option value="DUI">DUI</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="edit_document_number" className={labelClass}>
-            Número de documento
-          </label>
-          <DuiDocumentNumberField
-            id="edit_document_number"
-            inputClass={inputClass}
-            defaultValue={person.document_number}
-            disabled={isPending}
-          />
-        </div>
       </div>
 
       <div className="grid gap-4 tablet:grid-cols-2">
