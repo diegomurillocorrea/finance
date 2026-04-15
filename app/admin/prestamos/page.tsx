@@ -28,7 +28,11 @@ export default async function PrestamosPage({ searchParams }: PageProps) {
     `
       )
       .order("created_at", { ascending: false }),
-    supabase.from("persons").select("id, full_name").eq("status", "active").order("full_name"),
+    supabase
+      .from("persons")
+      .select("id, full_name, phone")
+      .eq("status", "active")
+      .order("full_name"),
     supabase.from("liquidity_pools").select("id, name").order("name"),
   ])
 

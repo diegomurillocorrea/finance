@@ -2,20 +2,12 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
 import { getSavingsAccountBalance } from "@/lib/actions/balances"
-import {
-  labelSavingsAccountStatus,
-  labelSavingsTransactionType,
-} from "@/lib/constants/labels-es"
+import { labelSavingsAccountStatus } from "@/lib/constants/labels-es"
 import { formatMoney } from "@/lib/format/money"
 import type { SavingsAccountRow } from "@/lib/database.types"
-import {
-  cardClass,
-  tableClass,
-  tableWrapClass,
-  tdClass,
-  thClass,
-} from "@/lib/form-classes"
+import { cardClass } from "@/lib/form-classes"
 import { AccountActions } from "./account-actions"
+import { SavingsTransactionsTable } from "@/components/admin/cuentas-ahorro/savings-transactions-table"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -64,7 +56,7 @@ export default async function CuentaDetallePage({ params }: PageProps) {
     .select("*")
     .eq("account_id", id)
     .order("occurred_at", { ascending: false })
-    .limit(40)
+    .limit(100)
 
   return (
     <div className="space-y-6">
@@ -119,31 +111,11 @@ export default async function CuentaDetallePage({ params }: PageProps) {
         {!txs?.length ? (
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Sin movimientos aún.</p>
         ) : (
-          <div className={`${tableWrapClass} mt-4`}>
-            <table className={tableClass}>
-              <thead>
-                <tr>
-                  <th className={thClass}>Fecha</th>
-                  <th className={thClass}>Tipo</th>
-                  <th className={thClass}>Monto</th>
-                  <th className={thClass}>Nota</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {txs.map((t) => (
-                  <tr key={t.id}>
-                    <td className={`${tdClass} tabular-nums text-zinc-600`}>
-                      {new Date(t.occurred_at).toLocaleString("es-MX")}
-                    </td>
-                    <td className={tdClass}>{labelSavingsTransactionType(t.type)}</td>
-                    <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(Number(t.amount))}
-                    </td>
-                    <td className={tdClass}>{t.description ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <SavingsTransactionsTable
+              rows={txs}
+              isActive={account.status === "active"}
+            />
           </div>
         )}
       </section>

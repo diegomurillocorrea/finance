@@ -83,6 +83,7 @@ export interface PoolMovementRow {
   occurred_at: string
   reference_loan_id: string | null
   reference_savings_transaction_id: string | null
+  reference_loan_payment_id: string | null
   idempotency_key: string | null
   description: string | null
   created_at: string

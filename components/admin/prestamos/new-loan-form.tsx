@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { createLoan } from "@/lib/actions/loans"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import {
   buttonPrimaryClass,
   buttonSecondaryClass,
@@ -16,6 +17,7 @@ interface Option {
   id: string
   full_name?: string
   name?: string
+  phone?: string | null
 }
 
 export interface NewLoanFormProps {
@@ -84,25 +86,20 @@ export function NewLoanForm({
         </div>
       ) : null}
 
-      <div>
-        <label htmlFor="nl_borrower_id" className={labelClass}>
-          Prestatario
-        </label>
-        <select
-          id="nl_borrower_id"
-          name="borrower_id"
-          required
-          className={selectClass}
-          disabled={isPending}
-        >
-          <option value="">Selecciona…</option>
-          {persons.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.full_name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SearchableSelect
+        id="nl_borrower_id"
+        name="borrower_id"
+        label="Prestatario"
+        required
+        disabled={isPending}
+        placeholder="Buscar por nombre…"
+        emptyMessage="Ninguna persona coincide. Prueba otro texto."
+        options={persons.map((p) => ({
+          id: p.id,
+          label: p.full_name ?? p.id,
+          description: p.phone?.trim() ? `Tel. ${p.phone}` : undefined,
+        }))}
+      />
 
       <div>
         <label htmlFor="nl_liquidity_pool_id" className={labelClass}>

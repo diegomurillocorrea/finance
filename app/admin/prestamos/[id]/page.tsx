@@ -21,6 +21,7 @@ import {
   thClass,
 } from "@/lib/form-classes"
 import { LoanDetailActions } from "./loan-detail-actions"
+import { LoanPaymentsTable } from "@/components/admin/prestamos/loan-payments-table"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -74,7 +75,7 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
 
   const cuotas = (installments ?? []) as LoanInstallmentRow[]
   const allPagos = (allPayments ?? []) as LoanPaymentRow[]
-  const pagos = allPagos.slice(0, 30)
+  const pagos = allPagos.slice(0, 100)
 
   const isDisbursed = Boolean(loan.disbursed_at)
   const totalPrincipalPaid = isDisbursed
@@ -245,37 +246,12 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
         {!pagos.length ? (
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Sin pagos registrados.</p>
         ) : (
-          <div className={`${tableWrapClass} mt-4`}>
-            <table className={tableClass}>
-              <thead>
-                <tr>
-                  <th className={thClass}>Fecha</th>
-                  <th className={thClass}>Monto</th>
-                  <th className={thClass}>Capital</th>
-                  <th className={thClass}>Interés</th>
-                  <th className={thClass}>Nota</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {pagos.map((p) => (
-                  <tr key={p.id}>
-                    <td className={`${tdClass} tabular-nums text-zinc-600`}>
-                      {new Date(p.paid_at).toLocaleString("es-MX")}
-                    </td>
-                    <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.amount))}
-                    </td>
-                    <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.principal_portion))}
-                    </td>
-                    <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(p.interest_portion))}
-                    </td>
-                    <td className={tdClass}>{p.notes ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <LoanPaymentsTable
+              rows={pagos}
+              canEditPayments={loan.status === "active" || loan.status === "paid"}
+              currencyCode={loan.liquidity_pools?.currency ?? undefined}
+            />
           </div>
         )}
       </section>

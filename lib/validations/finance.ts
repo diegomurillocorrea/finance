@@ -58,6 +58,26 @@ export const savingsMovementSchema = z.object({
   description: z.string().optional().or(z.literal("")),
 })
 
+export const savingsTransactionUpdateSchema = z.object({
+  transaction_id: z.string().uuid(),
+  amount: z.number().positive("El monto debe ser mayor a 0"),
+  description: z.string().optional().or(z.literal("")),
+  occurred_at: z.string().min(1, "Indica fecha y hora"),
+})
+
+export const loanPaymentUpdateSchema = z
+  .object({
+    payment_id: z.string().uuid(),
+    principal_amount: z.number().min(0),
+    interest_amount: z.number().min(0),
+    notes: z.string().optional().or(z.literal("")),
+    paid_at: z.string().min(1, "Indica fecha y hora"),
+  })
+  .refine((d) => d.principal_amount + d.interest_amount > 0, {
+    message: "El monto total debe ser mayor a 0",
+    path: ["principal_amount"],
+  })
+
 export const loanCreateSchema = z.object({
   borrower_id: z.string().uuid(),
   liquidity_pool_id: z.string().uuid(),

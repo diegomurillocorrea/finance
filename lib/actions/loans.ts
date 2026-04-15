@@ -13,6 +13,7 @@ import {
   loanAbonoInterestSchema,
   loanAbonoPrincipalSchema,
   loanCreateSchema,
+  loanPaymentUpdateSchema,
   loanUpdateDraftSchema,
 } from "@/lib/validations/finance"
 import { zodFirstMessage } from "@/lib/validations/zod-message"
@@ -41,6 +42,77 @@ async function maybeMarkLoanPaid(
   if (remaining <= 0.01) {
     await supabase.from("loans").update({ status: "paid" }).eq("id", loanId)
   }
+}
+
+async function syncLoanStatusFromRepayments(
+  supabase: SupabaseClient,
+  loanId: string,
+  originalPrincipal: number
+) {
+  const repaid = await fetchPrincipalRepaidSum(supabase, loanId)
+  const remaining = outstandingPrincipal(originalPrincipal, repaid)
+  if (remaining <= 0.01) {
+    await supabase.from("loans").update({ status: "paid" }).eq("id", loanId)
+    return
+  }
+  const { data: loan } = await supabase
+    .from("loans")
+    .select("status")
+    .eq("id", loanId)
+    .maybeSingle()
+  if (loan?.status === "paid") {
+    await supabase.from("loans").update({ status: "active" }).eq("id", loanId)
+  }
+}
+
+async function deletePoolMovementsForLoanPayment(
+  supabase: SupabaseClient,
+  loanId: string,
+  paymentId: string,
+  principalPortion: number,
+  interestPortion: number
+): Promise<string | null> {
+  const { data: byRef, error: qErr } = await supabase
+    .from("pool_movements")
+    .select("id")
+    .eq("reference_loan_payment_id", paymentId)
+
+  if (qErr) {
+    return qErr.message
+  }
+
+  if (byRef && byRef.length > 0) {
+    const { error } = await supabase
+      .from("pool_movements")
+      .delete()
+      .eq("reference_loan_payment_id", paymentId)
+    return error?.message ?? null
+  }
+
+  const tryDeleteOne = async (
+    type: "loan_repayment_principal" | "loan_repayment_interest",
+    amt: number
+  ): Promise<string | null> => {
+    if (amt <= 0.01) return null
+    const { data: row } = await supabase
+      .from("pool_movements")
+      .select("id")
+      .eq("reference_loan_id", loanId)
+      .is("reference_loan_payment_id", null)
+      .eq("type", type)
+      .eq("amount", String(round2(amt)))
+      .limit(1)
+      .maybeSingle()
+    if (!row?.id) return null
+    const { error } = await supabase.from("pool_movements").delete().eq("id", row.id)
+    if (error) return error.message
+    return null
+  }
+
+  const e1 = await tryDeleteOne("loan_repayment_principal", principalPortion)
+  if (e1) return e1
+  const e2 = await tryDeleteOne("loan_repayment_interest", interestPortion)
+  return e2
 }
 
 export async function createLoan(
@@ -324,18 +396,24 @@ export async function registerLoanAbono(formData: FormData): Promise<ActionResul
 
   const notesTrim = notes.trim() || null
 
-  const { error: payErr } = await supabase.from("loan_payments").insert({
-    loan_id: loanId,
-    amount: totalAmount,
-    principal_portion: principalPortion,
-    interest_portion: interestPortion,
-    penalty_portion: 0,
-    notes: notesTrim ?? defaultNote,
-  })
+  const { data: paymentRow, error: payErr } = await supabase
+    .from("loan_payments")
+    .insert({
+      loan_id: loanId,
+      amount: totalAmount,
+      principal_portion: principalPortion,
+      interest_portion: interestPortion,
+      penalty_portion: 0,
+      notes: notesTrim ?? defaultNote,
+    })
+    .select("id")
+    .single()
 
-  if (payErr) {
-    return { ok: false, message: payErr.message }
+  if (payErr || !paymentRow) {
+    return { ok: false, message: payErr?.message ?? "Error al registrar pago" }
   }
+
+  const paymentId = paymentRow.id
 
   if (principalPortion > 0) {
     const { error: e1 } = await supabase.from("pool_movements").insert({
@@ -343,6 +421,7 @@ export async function registerLoanAbono(formData: FormData): Promise<ActionResul
       type: "loan_repayment_principal",
       amount: principalPortion,
       reference_loan_id: loanId,
+      reference_loan_payment_id: paymentId,
       description: notesTrim || "Abono a capital",
     })
     if (e1) return { ok: false, message: e1.message }
@@ -354,6 +433,7 @@ export async function registerLoanAbono(formData: FormData): Promise<ActionResul
       type: "loan_repayment_interest",
       amount: interestPortion,
       reference_loan_id: loanId,
+      reference_loan_payment_id: paymentId,
       description: notesTrim || "Pago de intereses",
     })
     if (e2) return { ok: false, message: e2.message }
@@ -363,6 +443,210 @@ export async function registerLoanAbono(formData: FormData): Promise<ActionResul
 
   revalidatePath("/admin/prestamos")
   revalidatePath(`/admin/prestamos/${loanId}`)
+  revalidatePath("/admin/movimientos-fondo")
+  revalidatePath("/admin")
+  return { ok: true, data: undefined }
+}
+
+export async function deleteLoanPayment(paymentId: string): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+  const { supabase } = auth.data
+
+  const { data: pay, error: pErr } = await supabase
+    .from("loan_payments")
+    .select("*")
+    .eq("id", paymentId)
+    .single()
+
+  if (pErr || !pay) {
+    return { ok: false, message: "Pago no encontrado" }
+  }
+
+  const { data: loan, error: lErr } = await supabase
+    .from("loans")
+    .select("*")
+    .eq("id", pay.loan_id)
+    .single()
+
+  if (lErr || !loan) {
+    return { ok: false, message: "Préstamo no encontrado" }
+  }
+  if (loan.status !== "active" && loan.status !== "paid") {
+    return {
+      ok: false,
+      message: "No se puede eliminar el pago en el estado actual del préstamo",
+    }
+  }
+
+  const pp = round2(toNumber(pay.principal_portion))
+  const ip = round2(toNumber(pay.interest_portion))
+
+  const delPoolErr = await deletePoolMovementsForLoanPayment(
+    supabase,
+    pay.loan_id,
+    paymentId,
+    pp,
+    ip
+  )
+  if (delPoolErr) {
+    return { ok: false, message: delPoolErr }
+  }
+
+  const { error: delPay } = await supabase.from("loan_payments").delete().eq("id", paymentId)
+  if (delPay) {
+    return { ok: false, message: delPay.message }
+  }
+
+  await syncLoanStatusFromRepayments(supabase, pay.loan_id, toNumber(loan.principal))
+
+  revalidatePath("/admin/prestamos")
+  revalidatePath(`/admin/prestamos/${pay.loan_id}`)
+  revalidatePath("/admin/movimientos-fondo")
+  revalidatePath("/admin")
+  return { ok: true, data: undefined }
+}
+
+export async function updateLoanPayment(formData: FormData): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+
+  const principal_amount = parseAmountField(formData, "principal_amount", true)
+  const interest_amount = parseAmountField(formData, "interest_amount", true)
+  if (Number.isNaN(principal_amount) || Number.isNaN(interest_amount)) {
+    return { ok: false, message: "Cantidad inválida" }
+  }
+
+  const parsed = loanPaymentUpdateSchema.safeParse({
+    payment_id: String(formData.get("payment_id") ?? ""),
+    principal_amount,
+    interest_amount,
+    notes: String(formData.get("notes") ?? ""),
+    paid_at: String(formData.get("paid_at") ?? ""),
+  })
+
+  if (!parsed.success) {
+    return { ok: false, message: zodFirstMessage(parsed.error) }
+  }
+
+  const { supabase } = auth.data
+  const v = parsed.data
+
+  const { data: pay, error: payErr } = await supabase
+    .from("loan_payments")
+    .select("*")
+    .eq("id", v.payment_id)
+    .single()
+
+  if (payErr || !pay) {
+    return { ok: false, message: "Pago no encontrado" }
+  }
+
+  const { data: loan, error: lErr } = await supabase
+    .from("loans")
+    .select("*")
+    .eq("id", pay.loan_id)
+    .single()
+
+  if (lErr || !loan) {
+    return { ok: false, message: "Préstamo no encontrado" }
+  }
+  if (loan.status !== "active" && loan.status !== "paid") {
+    return {
+      ok: false,
+      message: "No se puede editar el pago en el estado actual del préstamo",
+    }
+  }
+
+  const originalPrincipal = toNumber(loan.principal)
+  const totalRepaid = await fetchPrincipalRepaidSum(supabase, pay.loan_id)
+  const currentOutstanding = outstandingPrincipal(originalPrincipal, totalRepaid)
+  const oldPrincipal = round2(toNumber(pay.principal_portion))
+  const maxPrincipal = round2(currentOutstanding + oldPrincipal)
+
+  if (v.principal_amount > maxPrincipal + 0.01) {
+    return {
+      ok: false,
+      message: `El abono a capital no puede superar el saldo (${maxPrincipal.toFixed(2)})`,
+    }
+  }
+
+  const principalPortion = round2(v.principal_amount)
+  const interestPortion = round2(v.interest_amount)
+  const totalAmount = round2(principalPortion + interestPortion)
+  const notesTrim = (v.notes ?? "").trim() || null
+  const defaultNote =
+    principalPortion > 0 && interestPortion > 0
+      ? "Abono a capital e interés"
+      : principalPortion > 0
+        ? "Abono a capital"
+        : "Pago de intereses"
+
+  const paidAt = new Date(v.paid_at)
+  if (Number.isNaN(paidAt.getTime())) {
+    return { ok: false, message: "Fecha u hora inválida" }
+  }
+  const paidAtIso = paidAt.toISOString()
+
+  const oldP = round2(toNumber(pay.principal_portion))
+  const oldI = round2(toNumber(pay.interest_portion))
+  const delPoolErr = await deletePoolMovementsForLoanPayment(
+    supabase,
+    pay.loan_id,
+    v.payment_id,
+    oldP,
+    oldI
+  )
+  if (delPoolErr) {
+    return { ok: false, message: delPoolErr }
+  }
+
+  const { error: upPay } = await supabase
+    .from("loan_payments")
+    .update({
+      amount: totalAmount,
+      principal_portion: principalPortion,
+      interest_portion: interestPortion,
+      penalty_portion: 0,
+      notes: notesTrim ?? defaultNote,
+      paid_at: paidAtIso,
+    })
+    .eq("id", v.payment_id)
+
+  if (upPay) {
+    return { ok: false, message: upPay.message }
+  }
+
+  if (principalPortion > 0) {
+    const { error: e1 } = await supabase.from("pool_movements").insert({
+      pool_id: loan.liquidity_pool_id,
+      type: "loan_repayment_principal",
+      amount: principalPortion,
+      reference_loan_id: pay.loan_id,
+      reference_loan_payment_id: v.payment_id,
+      description: notesTrim || "Abono a capital",
+      occurred_at: paidAtIso,
+    })
+    if (e1) return { ok: false, message: e1.message }
+  }
+
+  if (interestPortion > 0) {
+    const { error: e2 } = await supabase.from("pool_movements").insert({
+      pool_id: loan.liquidity_pool_id,
+      type: "loan_repayment_interest",
+      amount: interestPortion,
+      reference_loan_id: pay.loan_id,
+      reference_loan_payment_id: v.payment_id,
+      description: notesTrim || "Pago de intereses",
+      occurred_at: paidAtIso,
+    })
+    if (e2) return { ok: false, message: e2.message }
+  }
+
+  await syncLoanStatusFromRepayments(supabase, pay.loan_id, originalPrincipal)
+
+  revalidatePath("/admin/prestamos")
+  revalidatePath(`/admin/prestamos/${pay.loan_id}`)
   revalidatePath("/admin/movimientos-fondo")
   revalidatePath("/admin")
   return { ok: true, data: undefined }
