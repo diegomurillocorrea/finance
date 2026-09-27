@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { toNumber } from "@/lib/format/money"
 import {
   outstandingPrincipal,
@@ -991,5 +992,64 @@ export async function cancelLoanDraft(loanId: string): Promise<ActionResult> {
 
   revalidatePath("/admin/prestamos")
   revalidatePath(`/admin/prestamos/${loanId}`)
+  return { ok: true, data: undefined }
+}
+
+/**
+ * Borra el préstamo y todo lo que cuelga de él. Los movimientos de fondo van primero
+ * porque el saldo del fondo es la suma de `pool_movements`.
+ */
+export async function deleteLoan(loanId: string): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+
+  const idParsed = z.string().uuid().safeParse(loanId)
+  if (!idParsed.success) {
+    return { ok: false, message: "Identificador de préstamo inválido" }
+  }
+
+  const id = idParsed.data
+  const { supabase } = auth.data
+
+  const { data: loan, error: lErr } = await supabase
+    .from("loans")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (lErr) {
+    return { ok: false, message: lErr.message }
+  }
+  if (!loan) {
+    return { ok: false, message: "Préstamo no encontrado" }
+  }
+
+  const { error: mvErr } = await supabase
+    .from("pool_movements")
+    .delete()
+    .eq("reference_loan_id", id)
+  if (mvErr) {
+    return { ok: false, message: mvErr.message }
+  }
+
+  const { error: payErr } = await supabase.from("loan_payments").delete().eq("loan_id", id)
+  if (payErr) {
+    return { ok: false, message: payErr.message }
+  }
+
+  const { error: instErr } = await supabase
+    .from("loan_installments")
+    .delete()
+    .eq("loan_id", id)
+  if (instErr) {
+    return { ok: false, message: instErr.message }
+  }
+
+  const { error: loanErr } = await supabase.from("loans").delete().eq("id", id)
+  if (loanErr) {
+    return { ok: false, message: loanErr.message }
+  }
+
+  revalidateLoanPaths(id)
   return { ok: true, data: undefined }
 }

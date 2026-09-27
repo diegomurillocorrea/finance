@@ -47,6 +47,35 @@ export async function getSavingsBalancesByAccount(
   return { balances, errorMessage: null }
 }
 
+export async function getPrincipalRepaidByLoan(
+  supabase: SupabaseClient
+): Promise<{ repaid: Map<string, number>; errorMessage: string | null }> {
+  const repaid = new Map<string, number>()
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("loan_payments")
+      .select("loan_id, principal_portion")
+      .range(from, from + TRANSACTION_PAGE_SIZE - 1)
+
+    if (error) {
+      return { repaid, errorMessage: error.message }
+    }
+    if (!data?.length) break
+
+    for (const row of data) {
+      const loanId = String(row.loan_id)
+      repaid.set(loanId, (repaid.get(loanId) ?? 0) + toNumber(row.principal_portion))
+    }
+
+    if (data.length < TRANSACTION_PAGE_SIZE) break
+    from += TRANSACTION_PAGE_SIZE
+  }
+
+  return { repaid, errorMessage: null }
+}
+
 export async function getPoolBalance(
   supabase: SupabaseClient,
   poolId: string

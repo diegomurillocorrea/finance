@@ -25,12 +25,69 @@ import {
   tdClass,
   thClass,
 } from "@/lib/form-classes"
-import { LoanDetailActions } from "./loan-detail-actions"
+import { CancelLoanAction, DeleteLoanAction, LoanDetailActions } from "./loan-detail-actions"
 import { LoanPaymentsTable } from "@/components/admin/prestamos/loan-payments-table"
 import { LoanDisbursementsTable } from "@/components/admin/prestamos/loan-disbursements-table"
 
 interface PageProps {
   params: Promise<{ id: string }>
+}
+
+const metaChipClass =
+  "rounded-lg border border-zinc-200/80 bg-white/80 px-3 py-1.5 text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300"
+
+const statTileClass =
+  "rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40"
+
+function loanStatusBadgeClass(status: string): string {
+  if (status === "active" || status === "paid") {
+    return "inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-100/80 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+  }
+  if (status === "defaulted") {
+    return "inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-100/80 px-3 py-1.5 text-xs font-semibold text-red-800 dark:border-red-900 dark:bg-red-950/70 dark:text-red-300"
+  }
+  return "inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+}
+
+function loanStatusDotClass(status: string): string {
+  if (status === "active" || status === "paid") return "h-2 w-2 rounded-full bg-emerald-500"
+  if (status === "defaulted") return "h-2 w-2 rounded-full bg-red-500"
+  return "h-2 w-2 rounded-full bg-zinc-400"
+}
+
+function SectionHeading({
+  title,
+  description,
+  countLabel,
+}: {
+  title: string
+  description: string
+  countLabel: string
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>
+      </div>
+      <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        {countLabel}
+      </span>
+    </div>
+  )
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function EmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mt-5 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center dark:border-zinc-700">
+      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</p>
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
+    </div>
+  )
 }
 
 export default async function PrestamoDetallePage({ params }: PageProps) {
@@ -106,141 +163,182 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
     loan.status === "active" && saldoInsoluto > 0.01
       ? monthlyInterestOnOutstanding(saldoInsoluto, toNumber(loan.monthly_interest_rate))
       : 0
+  const isDraft = loan.status === "draft" || loan.status === "pending_approval"
+  const heroAmount = isDisbursed ? saldoInsoluto : toNumber(loan.principal)
+  const heroLabel = isDisbursed ? "Saldo insoluto" : "Capital a desembolsar"
+  const operationsHint = isDraft
+    ? "Edita el borrador o desembolsa para activar el préstamo."
+    : loan.status === "active"
+      ? "Registra abonos o suma capital a este préstamo."
+      : loan.status === "paid"
+        ? "Puedes prestar un monto nuevo sobre este préstamo liquidado."
+        : "No hay operaciones disponibles en este estado."
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/admin/prestamos"
-          className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
-        >
-          ← Préstamos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          Préstamo — {loan.persons?.full_name ?? "Prestatario"}
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Fondo: {loan.liquidity_pools?.name ?? "—"} · Estado:{" "}
-          <span className="font-medium">{labelLoanStatus(loan.status)}</span>
-        </p>
+      <header className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-linear-to-br from-emerald-50 via-white to-white p-6 shadow-sm dark:border-emerald-900/50 dark:from-emerald-950/30 dark:via-zinc-900 dark:to-zinc-900 sm:p-8">
+        <div
+          aria-hidden="true"
+          className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-emerald-200/30 blur-3xl dark:bg-emerald-500/10"
+        />
+        <div className="relative">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link
+              href="/admin/prestamos"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl pr-3 text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-emerald-400 dark:hover:text-emerald-300"
+            >
+              <span aria-hidden="true">←</span>
+              Préstamos
+            </Link>
+            <span className={loanStatusBadgeClass(loan.status)}>
+              <span aria-hidden="true" className={loanStatusDotClass(loan.status)} />
+              {labelLoanStatus(loan.status)}
+            </span>
+          </div>
+
+          <h1 className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-3xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
+            <span>Préstamo</span>
+            <span aria-hidden="true" className="hidden text-zinc-300 sm:inline dark:text-zinc-700">
+              /
+            </span>
+            <span className="text-emerald-600 dark:text-emerald-400">
+              {loan.persons?.full_name ?? "Prestatario"}
+            </span>
+          </h1>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <span className={metaChipClass}>
+              Fondo:{" "}
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                {loan.liquidity_pools?.name ?? "—"}
+              </span>
+            </span>
+            <span className={`${metaChipClass} font-medium text-zinc-700 dark:text-zinc-200`}>
+              {currencyCode ?? "USD"}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <section className={`${cardClass} relative overflow-hidden`}>
+          <div aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-emerald-500" />
+          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{heroLabel}</p>
+          <p className="mt-2 text-4xl font-bold tracking-tight tabular-nums text-zinc-950 dark:text-zinc-50">
+            {formatMoney(heroAmount, currencyCode)}
+          </p>
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            {isDisbursed
+              ? loan.status === "active" && saldoInsoluto > 0.01
+                ? `Interés mensual sugerido: ${formatMoney(interesMensualSugerido, currencyCode)}. Cada abono a capital reduce el saldo y el interés del mes siguiente.`
+                : "Capital pendiente después de los abonos registrados."
+              : "Este préstamo aún no se ha desembolsado."}
+          </p>
+        </section>
+
+        <section className={cardClass}>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Operaciones</h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{operationsHint}</p>
+          <div className="mt-5">
+            <LoanDetailActions
+              loan={loan}
+              outstandingPrincipal={saldoInsoluto}
+              suggestedMonthlyInterest={interesMensualSugerido}
+            />
+          </div>
+        </section>
       </div>
 
-      <section className={`${cardClass} grid gap-4 tablet:grid-cols-3`}>
-        <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Capital prestado
-          </p>
-          <p className="mt-1 text-xl font-semibold tabular-nums">
-            {formatMoney(toNumber(loan.principal))}
-          </p>
-        </div>
-        <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Tasa mensual</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums">
-            {toNumber(loan.monthly_interest_rate).toFixed(2)}%
-          </p>
-        </div>
-        <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Plazo referencial
-          </p>
-          <p className="mt-1 text-xl font-semibold">{loan.term_months} meses</p>
-        </div>
-        <div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Frecuencia de pago</p>
-          <p className="mt-1 text-xl font-semibold">
-            {labelPaymentFrequency(loan.payment_frequency)}
-          </p>
-        </div>
-        {loan.disbursed_at ? (
-          <div className="tablet:col-span-3">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">Desembolso</p>
-            <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
-              {new Date(loan.disbursed_at).toLocaleString("es-MX")}
-              {loan.maturity_date ? ` · Vencimiento: ${loan.maturity_date}` : null}
-            </p>
+      <section className={cardClass}>
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Condiciones</h2>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          Capital, tasa y plazo acordados para este préstamo.
+        </p>
+        <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={statTileClass}>
+            <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Capital prestado</dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+              {formatMoney(toNumber(loan.principal), currencyCode)}
+            </dd>
           </div>
-        ) : null}
-        {loan.purpose ? (
-          <div className="tablet:col-span-3">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">Finalidad</p>
-            <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">{loan.purpose}</p>
+          <div className={statTileClass}>
+            <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Tasa mensual</dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+              {toNumber(loan.monthly_interest_rate).toFixed(2)}%
+            </dd>
+          </div>
+          <div className={statTileClass}>
+            <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Plazo referencial</dt>
+            <dd className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              {loan.term_months} meses
+            </dd>
+          </div>
+          <div className={statTileClass}>
+            <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Frecuencia de pago</dt>
+            <dd className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              {labelPaymentFrequency(loan.payment_frequency)}
+            </dd>
+          </div>
+        </dl>
+        {loan.disbursed_at || loan.purpose ? (
+          <div className="mt-4 flex flex-col gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+            {loan.disbursed_at ? (
+              <p>
+                Desembolso:{" "}
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  {new Date(loan.disbursed_at).toLocaleString("es-MX")}
+                </span>
+                {loan.maturity_date ? (
+                  <>
+                    {" "}
+                    · Vencimiento:{" "}
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {loan.maturity_date}
+                    </span>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            {loan.purpose ? (
+              <p>
+                Finalidad:{" "}
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">{loan.purpose}</span>
+              </p>
+            ) : null}
           </div>
         ) : null}
       </section>
 
       <section className={cardClass}>
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Acciones</h2>
-        <div className="mt-4">
-          <LoanDetailActions
-            loan={loan}
-            outstandingPrincipal={saldoInsoluto}
-            suggestedMonthlyInterest={interesMensualSugerido}
+        <SectionHeading
+          title="Desembolsos"
+          description="Cada monto prestado a este préstamo. La suma es el capital prestado."
+          countLabel={formatCount(desembolsos.length, "desembolso", "desembolsos")}
+        />
+        {!desembolsos.length ? (
+          <EmptyState
+            title="Sin desembolsos aún"
+            description="El desembolso inicial y los montos agregados aparecerán aquí."
           />
-        </div>
-      </section>
-
-      {isDisbursed ? (
-        <section className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Saldo insoluto
-          </h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            El interés mensual es la tasa sobre el capital pendiente. El prestatario puede
-            pagar solo interés o interés más abono a capital; cada abono reduce el saldo y
-            el interés del mes siguiente.
-          </p>
-          <dl className="mt-4 grid gap-3 tablet:grid-cols-2">
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Capital pendiente
-              </dt>
-              <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {formatMoney(saldoInsoluto)}
-              </dd>
-            </div>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Interés mensual sugerido (sobre saldo)
-              </dt>
-              <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {loan.status === "active" && saldoInsoluto > 0.01
-                  ? formatMoney(interesMensualSugerido)
-                  : "—"}
-              </dd>
-            </div>
-          </dl>
-        </section>
-      ) : null}
-
-      {desembolsos.length > 0 ? (
-        <section className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Desembolsos
-          </h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Cada monto prestado a este préstamo. La suma es el capital prestado.
-          </p>
-          <div className="mt-4">
+        ) : (
+          <div className="mt-5">
             <LoanDisbursementsTable
               rows={desembolsos}
               canEdit={loan.status === "active" || loan.status === "paid"}
               currencyCode={currencyCode}
             />
           </div>
-        </section>
-      ) : null}
+        )}
+      </section>
 
       {cuotas.length > 0 ? (
         <section className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Cuotas históricas (legado)
-          </h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Este préstamo tiene filas de cuotas antiguas; los nuevos pagos siguen el saldo
-            insoluto y no dependen de esta tabla.
-          </p>
-          <div className={`${tableWrapClass} mt-4`}>
+          <SectionHeading
+            title="Cuotas históricas"
+            description="Filas de cuotas antiguas. Los pagos nuevos siguen el saldo insoluto y no dependen de esta tabla."
+            countLabel={formatCount(cuotas.length, "cuota", "cuotas")}
+          />
+          <div className={`${tableWrapClass} mt-5`}>
             <table className={tableClass}>
               <thead>
                 <tr>
@@ -258,13 +356,13 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
                     <td className={tdClass}>{c.installment_number}</td>
                     <td className={`${tdClass} tabular-nums`}>{c.due_date}</td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(c.principal_due))}
+                      {formatMoney(toNumber(c.principal_due), currencyCode)}
                     </td>
                     <td className={`${tdClass} tabular-nums`}>
-                      {formatMoney(toNumber(c.interest_due))}
+                      {formatMoney(toNumber(c.interest_due), currencyCode)}
                     </td>
                     <td className={`${tdClass} tabular-nums font-medium`}>
-                      {formatMoney(toNumber(c.total_due))}
+                      {formatMoney(toNumber(c.total_due), currencyCode)}
                     </td>
                     <td className={tdClass}>{labelInstallmentStatus(c.status)}</td>
                   </tr>
@@ -276,21 +374,33 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
       ) : null}
 
       <section className={cardClass}>
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Historial de pagos
-        </h2>
+        <SectionHeading
+          title="Historial de pagos"
+          description="Abonos de interés y capital registrados en este préstamo."
+          countLabel={formatCount(pagos.length, "pago", "pagos")}
+        />
         {!pagos.length ? (
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Sin pagos registrados.</p>
+          <EmptyState
+            title="Sin pagos aún"
+            description="Los abonos de interés y capital aparecerán aquí."
+          />
         ) : (
-          <div className="mt-4">
+          <div className="mt-5">
             <LoanPaymentsTable
               rows={pagos}
               canEditPayments={loan.status === "active" || loan.status === "paid"}
-              currencyCode={loan.liquidity_pools?.currency ?? undefined}
+              currencyCode={currencyCode}
             />
           </div>
         )}
       </section>
+
+      <CancelLoanAction loanId={id} isDraft={isDraft} />
+
+      <DeleteLoanAction
+        loanId={id}
+        borrowerName={loan.persons?.full_name ?? "este prestatario"}
+      />
     </div>
   )
 }

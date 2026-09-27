@@ -5,6 +5,7 @@ import { useCallback, useState, useTransition } from "react"
 import {
   addToLoanPrincipal,
   cancelLoanDraft,
+  deleteLoan,
   disburseLoan,
   registerLoanAbono,
   updateLoanDraft,
@@ -30,6 +31,54 @@ interface Props {
   }
   outstandingPrincipal: number
   suggestedMonthlyInterest: number
+}
+
+const iconClass = "h-4 w-4"
+
+function PlusIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={iconClass}
+    >
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={iconClass}
+    >
+      <path d="M12 20h9" strokeLinecap="round" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={iconClass}
+    >
+      <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
 }
 
 export function LoanDetailActions({
@@ -141,20 +190,6 @@ export function LoanDetailActions({
     })
   }
 
-  const handleCancel = () => {
-    setErr(null)
-    setMsg(null)
-    startTransition(async () => {
-      const r = await cancelLoanDraft(loan.id)
-      if (!r.ok) {
-        setErr(r.message)
-        return
-      }
-      setMsg("Préstamo cancelado")
-      router.refresh()
-    })
-  }
-
   const handleUpdateDraft = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setErr(null)
@@ -217,31 +252,24 @@ export function LoanDetailActions({
 
       {isDraft ? (
         <div className="space-y-4">
-          <button
-            type="button"
-            onClick={handleOpenEditDraft}
-            className={buttonSecondaryClass}
-            aria-haspopup="dialog"
-          >
-            Editar borrador
-          </button>
-
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:flex sm:flex-wrap">
+            <button
+              type="button"
+              onClick={handleOpenEditDraft}
+              className={`${buttonSecondaryClass} gap-2`}
+              aria-haspopup="dialog"
+            >
+              <PencilIcon />
+              Editar borrador
+            </button>
             <button
               type="button"
               onClick={handleDisburse}
               disabled={isPending}
-              className={buttonPrimaryClass}
+              className={`${buttonPrimaryClass} gap-2`}
             >
+              <ArrowIcon />
               Desembolsar (activar)
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={isPending}
-              className={buttonDangerClass}
-            >
-              Cancelar préstamo
             </button>
           </div>
 
@@ -345,47 +373,28 @@ export function LoanDetailActions({
 
       {isActive ? (
         <div className="space-y-4">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Saldo pendiente:{" "}
-            <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {formatMoney(
-                outstandingPrincipal,
-                loan.liquidity_pools?.currency ?? undefined
-              )}
-            </span>
-            {suggestedMonthlyInterest > 0 ? (
-              <>
-                {" "}
-                · Interés mensual sugerido:{" "}
-                <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-                  {formatMoney(
-                    suggestedMonthlyInterest,
-                    loan.liquidity_pools?.currency ?? undefined
-                  )}
-                </span>
-              </>
-            ) : null}
-          </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:flex sm:flex-wrap">
             <button
               type="button"
               onClick={handleOpenAbono}
               disabled={isPending || !canRegisterAbono}
-              className={buttonPrimaryClass}
+              className={`${buttonPrimaryClass} gap-2`}
               title={
                 !canRegisterAbono ? "Sin saldo pendiente que registrar" : undefined
               }
               aria-haspopup="dialog"
             >
+              <PlusIcon />
               Registrar abono
             </button>
             <button
               type="button"
               onClick={handleOpenAddPrincipal}
               disabled={isPending}
-              className={buttonSecondaryClass}
+              className={`${buttonSecondaryClass} gap-2`}
               aria-haspopup="dialog"
             >
+              <PlusIcon />
               Agregar a la deuda
             </button>
           </div>
@@ -559,21 +568,16 @@ export function LoanDetailActions({
       ) : null}
 
       {isPaid ? (
-        <div className="space-y-4">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Este préstamo está liquidado. Si se presta un monto nuevo, se suma al capital y el
-            préstamo vuelve a estar activo.
-          </p>
-          <button
-            type="button"
-            onClick={handleOpenAddPrincipal}
-            disabled={isPending}
-            className={buttonPrimaryClass}
-            aria-haspopup="dialog"
-          >
-            Agregar a la deuda
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleOpenAddPrincipal}
+          disabled={isPending}
+          className={`${buttonPrimaryClass} gap-2`}
+          aria-haspopup="dialog"
+        >
+          <PlusIcon />
+          Agregar a la deuda
+        </button>
       ) : null}
 
       {isActive || isPaid ? (
@@ -687,5 +691,200 @@ export function LoanDetailActions({
         </p>
       ) : null}
     </div>
+  )
+}
+
+interface CancelLoanActionProps {
+  loanId: string
+  isDraft: boolean
+}
+
+export function CancelLoanAction({ loanId, isDraft }: CancelLoanActionProps) {
+  const router = useRouter()
+  const [err, setErr] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const [cancelOpen, setCancelOpen] = useState(false)
+
+  const handleOpenCancel = () => {
+    setErr(null)
+    setCancelOpen(true)
+  }
+
+  const handleCancel = () => {
+    setErr(null)
+    startTransition(async () => {
+      const result = await cancelLoanDraft(loanId)
+      if (!result.ok) {
+        setErr(result.message)
+        return
+      }
+      setCancelOpen(false)
+      router.refresh()
+    })
+  }
+
+  if (!isDraft) return null
+
+  return (
+    <section className="rounded-2xl border border-red-200/70 bg-red-50/50 p-6 dark:border-red-950 dark:bg-red-950/20 tablet:p-8">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Cancelar préstamo</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Solo se puede cancelar mientras el préstamo siga en borrador y no se haya desembolsado.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenCancel}
+          disabled={isPending}
+          className={`${buttonDangerClass} shrink-0`}
+          aria-haspopup="dialog"
+        >
+          Cancelar préstamo
+        </button>
+      </div>
+      {err ? (
+        <div
+          role="alert"
+          className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
+        >
+          {err}
+        </div>
+      ) : null}
+
+      <Modal
+        open={cancelOpen}
+        onClose={() => setCancelOpen(false)}
+        title="Cancelar préstamo"
+        titleId="modal-cancelar-prestamo-title"
+      >
+        <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+          ¿Confirmas cancelar este préstamo? No se podrá desembolsar después.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={isPending}
+            className={buttonDangerClass}
+          >
+            Sí, cancelar préstamo
+          </button>
+          <button
+            type="button"
+            onClick={() => setCancelOpen(false)}
+            disabled={isPending}
+            className={buttonSecondaryClass}
+          >
+            Volver
+          </button>
+        </div>
+      </Modal>
+    </section>
+  )
+}
+
+interface DeleteLoanActionProps {
+  loanId: string
+  borrowerName: string
+}
+
+export function DeleteLoanAction({ loanId, borrowerName }: DeleteLoanActionProps) {
+  const router = useRouter()
+  const [err, setErr] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  const handleOpenDelete = () => {
+    setErr(null)
+    setDeleteOpen(true)
+  }
+
+  const handleCloseDelete = () => {
+    if (isPending) return
+    setDeleteOpen(false)
+  }
+
+  const handleDelete = () => {
+    setErr(null)
+    startTransition(async () => {
+      const result = await deleteLoan(loanId)
+      if (!result.ok) {
+        setErr(result.message)
+        return
+      }
+      router.replace("/admin/prestamos")
+      router.refresh()
+    })
+  }
+
+  return (
+    <section className="rounded-2xl border border-red-200/70 bg-red-50/50 p-6 dark:border-red-950 dark:bg-red-950/20 tablet:p-8">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Eliminar préstamo</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Borra el préstamo con sus desembolsos, pagos y cuotas. El saldo del fondo vuelve a como
+            estaba antes de este préstamo.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenDelete}
+          disabled={isPending}
+          className={`${buttonDangerClass} shrink-0`}
+          aria-haspopup="dialog"
+        >
+          Eliminar préstamo
+        </button>
+      </div>
+
+      <Modal
+        open={deleteOpen}
+        onClose={handleCloseDelete}
+        title="Eliminar préstamo"
+        titleId="modal-eliminar-prestamo-title"
+        panelClassName="max-w-md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            ¿Seguro que quieres eliminar el préstamo de{" "}
+            <span className="font-semibold text-zinc-900 dark:text-zinc-50">{borrowerName}</span>?
+            Esta acción no se puede deshacer.
+          </p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Se borrarán todos sus desembolsos, pagos y cuotas, y los movimientos del fondo
+            asociados.
+          </p>
+          {err ? (
+            <div
+              role="alert"
+              className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
+            >
+              {err}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleCloseDelete}
+              disabled={isPending}
+              className={buttonSecondaryClass}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isPending}
+              className={buttonDangerClass}
+            >
+              {isPending ? "Eliminando…" : "Sí, eliminar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </section>
   )
 }

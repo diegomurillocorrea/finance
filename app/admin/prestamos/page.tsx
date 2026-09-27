@@ -1,3 +1,6 @@
+import { getPrincipalRepaidByLoan } from "@/lib/actions/balances"
+import { outstandingPrincipal } from "@/lib/loan-balance"
+import { toNumber } from "@/lib/format/money"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
 import {
   PrestamosPanel,
@@ -12,7 +15,8 @@ export default async function PrestamosPage({ searchParams }: PageProps) {
   const sp = await searchParams
   const { supabase } = await getAdminSupabaseOrRedirect()
 
-  const [{ data: loans, error }, { data: persons }, { data: pools }] = await Promise.all([
+  const [{ data: loans, error }, { data: persons }, { data: pools }, repaidResult] =
+    await Promise.all([
     supabase
       .from("loans")
       .select(
@@ -34,6 +38,7 @@ export default async function PrestamosPage({ searchParams }: PageProps) {
       .eq("status", "active")
       .order("full_name"),
     supabase.from("liquidity_pools").select("id, name").order("name"),
+    getPrincipalRepaidByLoan(supabase),
   ])
 
   const list: PrestamoListaRow[] = (loans ?? []).map((row) => {
@@ -52,9 +57,17 @@ export default async function PrestamosPage({ searchParams }: PageProps) {
     }
     const p = r.persons
     const pool = r.liquidity_pools
+    const principal = toNumber(r.principal)
+    const repaid = repaidResult.repaid.get(r.id) ?? 0
+    const balance = r.disbursed_at
+      ? outstandingPrincipal(principal, repaid)
+      : r.status === "cancelled"
+        ? 0
+        : principal
     return {
       id: r.id,
       principal: r.principal,
+      balance,
       monthly_interest_rate: r.monthly_interest_rate,
       term_months: r.term_months,
       status: r.status,
@@ -64,12 +77,14 @@ export default async function PrestamosPage({ searchParams }: PageProps) {
     }
   })
 
+  const errorMessage = [error?.message, repaidResult.errorMessage].filter(Boolean).join(" ")
+
   return (
     <PrestamosPanel
       loans={list}
       persons={persons ?? []}
       pools={pools ?? []}
-      errorMessage={error?.message ?? null}
+      errorMessage={errorMessage || null}
       initialOpenCreate={sp.nueva === "1"}
     />
   )
