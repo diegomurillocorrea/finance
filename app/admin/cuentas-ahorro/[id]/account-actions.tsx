@@ -29,7 +29,6 @@ export function AccountActions({ accountId, isActive, balance }: AccountActionsP
   const [isPending, startTransition] = useTransition()
   const [depositOpen, setDepositOpen] = useState(false)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
-  const [closeOpen, setCloseOpen] = useState(false)
   const [depositKey, setDepositKey] = useState(0)
   const [withdrawKey, setWithdrawKey] = useState(0)
 
@@ -91,21 +90,6 @@ export function AccountActions({ accountId, isActive, balance }: AccountActionsP
     })
   }
 
-  const handleClose = () => {
-    setErr(null)
-    setMsg(null)
-    startTransition(async () => {
-      const r = await closeSavingsAccount(accountId)
-      if (!r.ok) {
-        setErr(r.message)
-        return
-      }
-      setCloseOpen(false)
-      setMsg("Cuenta cerrada")
-      router.refresh()
-    })
-  }
-
   if (!isActive) {
     return (
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -133,41 +117,42 @@ export function AccountActions({ accountId, isActive, balance }: AccountActionsP
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid gap-3 sm:flex sm:flex-wrap">
         <button
           type="button"
           onClick={handleOpenDeposit}
-          className={buttonPrimaryClass}
+          className={`${buttonPrimaryClass} gap-2`}
           aria-haspopup="dialog"
         >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-4 w-4"
+          >
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
           Registrar depósito
         </button>
         <button
           type="button"
           onClick={handleOpenWithdraw}
-          className={buttonSecondaryClass}
+          className={`${buttonSecondaryClass} gap-2`}
           aria-haspopup="dialog"
         >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-4 w-4"
+          >
+            <path d="M5 12h14" strokeLinecap="round" />
+          </svg>
           Registrar retiro
-        </button>
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
-        <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">Cerrar cuenta</h3>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Solo permitido con saldo 0. La cuenta pasará a estado cerrado.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setErr(null)
-            setMsg(null)
-            setCloseOpen(true)
-          }}
-          disabled={isPending || balance !== 0}
-          className={`${buttonDangerClass} mt-4`}
-        >
-          Cerrar cuenta
         </button>
       </div>
 
@@ -265,6 +250,63 @@ export function AccountActions({ accountId, isActive, balance }: AccountActionsP
         </form>
       </Modal>
 
+    </div>
+  )
+}
+
+export function CloseAccountAction({ accountId, isActive, balance }: AccountActionsProps) {
+  const router = useRouter()
+  const [err, setErr] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const [closeOpen, setCloseOpen] = useState(false)
+
+  const handleOpenClose = () => {
+    setErr(null)
+    setCloseOpen(true)
+  }
+
+  const handleClose = () => {
+    setErr(null)
+    startTransition(async () => {
+      const result = await closeSavingsAccount(accountId)
+      if (!result.ok) {
+        setErr(result.message)
+        return
+      }
+      setCloseOpen(false)
+      router.refresh()
+    })
+  }
+
+  if (!isActive) return null
+
+  return (
+    <section className="rounded-2xl border border-red-200/70 bg-red-50/50 p-6 dark:border-red-950 dark:bg-red-950/20 tablet:p-8">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Cerrar cuenta</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Esta acción solo está disponible cuando el saldo sea USD 0.00.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenClose}
+          disabled={isPending || balance !== 0}
+          className={`${buttonDangerClass} shrink-0`}
+        >
+          Cerrar cuenta
+        </button>
+      </div>
+      {err ? (
+        <div
+          role="alert"
+          className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
+        >
+          {err}
+        </div>
+      ) : null}
+
       <Modal
         open={closeOpen}
         onClose={() => setCloseOpen(false)}
@@ -293,6 +335,6 @@ export function AccountActions({ accountId, isActive, balance }: AccountActionsP
           </button>
         </div>
       </Modal>
-    </div>
+    </section>
   )
 }

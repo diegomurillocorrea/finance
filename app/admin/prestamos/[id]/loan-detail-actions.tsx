@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation"
 import { useCallback, useState, useTransition } from "react"
 import {
+  addToLoanPrincipal,
   cancelLoanDraft,
   disburseLoan,
   registerLoanAbono,
@@ -10,7 +11,8 @@ import {
 } from "@/lib/actions/loans"
 import type { LoanRow } from "@/lib/database.types"
 import { labelLoanStatus } from "@/lib/constants/labels-es"
-import { formatMoney } from "@/lib/format/money"
+import { formatMoney, toNumber } from "@/lib/format/money"
+import { monthlyInterestOnOutstanding, round2 } from "@/lib/loan-balance"
 import { Modal } from "@/components/ui/modal"
 import {
   buttonDangerClass,
@@ -47,11 +49,25 @@ export function LoanDetailActions({
   const [interestOnlyAmount, setInterestOnlyAmount] = useState("")
   const [principalAmountInput, setPrincipalAmountInput] = useState("")
   const [capitalPairInterestInput, setCapitalPairInterestInput] = useState("")
+  const [addPrincipalOpen, setAddPrincipalOpen] = useState(false)
+  const [addPrincipalFormKey, setAddPrincipalFormKey] = useState(0)
+  const [addPrincipalInput, setAddPrincipalInput] = useState("")
 
   const isDraft =
     loan.status === "draft" || loan.status === "pending_approval"
   const isActive = loan.status === "active"
+  const isPaid = loan.status === "paid"
   const canRegisterAbono = isActive && outstandingPrincipal > 0.01
+  const currencyCode = loan.liquidity_pools?.currency ?? undefined
+
+  const parsedAddAmount = Number(addPrincipalInput.trim().replace(",", "."))
+  const addAmount =
+    Number.isFinite(parsedAddAmount) && parsedAddAmount > 0 ? round2(parsedAddAmount) : 0
+  const outstandingAfterAdd = round2(outstandingPrincipal + addAmount)
+  const interestAfterAdd = monthlyInterestOnOutstanding(
+    outstandingAfterAdd,
+    toNumber(loan.monthly_interest_rate)
+  )
 
   const suggestedInterestStr =
     suggestedMonthlyInterest > 0 ? suggestedMonthlyInterest.toFixed(2) : ""
@@ -83,6 +99,32 @@ export function LoanDetailActions({
     }
     setPrincipalAmountInput("")
     setCapitalPairInterestInput(suggestedInterestStr)
+  }
+
+  const handleOpenAddPrincipal = useCallback(() => {
+    setAddPrincipalFormKey((k) => k + 1)
+    setAddPrincipalInput("")
+    setAddPrincipalOpen(true)
+    setErr(null)
+    setMsg(null)
+  }, [])
+
+  const handleAddPrincipal = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setErr(null)
+    setMsg(null)
+    const fd = new FormData(e.currentTarget)
+    fd.set("loan_id", loan.id)
+    startTransition(async () => {
+      const r = await addToLoanPrincipal(fd)
+      if (!r.ok) {
+        setErr(r.message)
+        return
+      }
+      setMsg("Monto agregado a la deuda")
+      setAddPrincipalOpen(false)
+      router.refresh()
+    })
   }
 
   const handleDisburse = () => {
@@ -324,18 +366,29 @@ export function LoanDetailActions({
               </>
             ) : null}
           </p>
-          <button
-            type="button"
-            onClick={handleOpenAbono}
-            disabled={isPending || !canRegisterAbono}
-            className={buttonPrimaryClass}
-            title={
-              !canRegisterAbono ? "Sin saldo pendiente que registrar" : undefined
-            }
-            aria-haspopup="dialog"
-          >
-            Registrar abono
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleOpenAbono}
+              disabled={isPending || !canRegisterAbono}
+              className={buttonPrimaryClass}
+              title={
+                !canRegisterAbono ? "Sin saldo pendiente que registrar" : undefined
+              }
+              aria-haspopup="dialog"
+            >
+              Registrar abono
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAddPrincipal}
+              disabled={isPending}
+              className={buttonSecondaryClass}
+              aria-haspopup="dialog"
+            >
+              Agregar a la deuda
+            </button>
+          </div>
 
           <Modal
             open={abonoOpen}
@@ -505,7 +558,129 @@ export function LoanDetailActions({
         </div>
       ) : null}
 
-      {!isDraft && !isActive ? (
+      {isPaid ? (
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Este préstamo está liquidado. Si se presta un monto nuevo, se suma al capital y el
+            préstamo vuelve a estar activo.
+          </p>
+          <button
+            type="button"
+            onClick={handleOpenAddPrincipal}
+            disabled={isPending}
+            className={buttonPrimaryClass}
+            aria-haspopup="dialog"
+          >
+            Agregar a la deuda
+          </button>
+        </div>
+      ) : null}
+
+      {isActive || isPaid ? (
+        <Modal
+          open={addPrincipalOpen}
+          onClose={() => setAddPrincipalOpen(false)}
+          title="Agregar a la deuda"
+          titleId="modal-agregar-deuda-prestamo-title"
+          panelClassName="max-w-xl"
+        >
+          <p
+            id="add-principal-modal-hint"
+            className="mb-4 text-xs text-zinc-500 dark:text-zinc-400"
+          >
+            El monto sale del fondo {loan.liquidity_pools?.name ?? ""} y se suma al capital de
+            este préstamo. La tasa mensual se mantiene en{" "}
+            {toNumber(loan.monthly_interest_rate).toFixed(2)}%.
+          </p>
+          <form
+            key={addPrincipalFormKey}
+            onSubmit={handleAddPrincipal}
+            className="space-y-4"
+            aria-describedby="add-principal-modal-hint"
+          >
+            <div>
+              <label htmlFor="add_principal_amount" className={labelClass}>
+                Monto a prestar
+              </label>
+              <input
+                id="add_principal_amount"
+                name="amount"
+                type="text"
+                inputMode="decimal"
+                required
+                autoComplete="off"
+                placeholder="0.00"
+                value={addPrincipalInput}
+                onChange={(e) => setAddPrincipalInput(e.target.value)}
+                className={inputClass}
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <label htmlFor="add_principal_notes" className={labelClass}>
+                Notas
+              </label>
+              <input
+                id="add_principal_notes"
+                name="notes"
+                type="text"
+                className={inputClass}
+                disabled={isPending}
+                autoComplete="off"
+                placeholder="Opcional"
+              />
+            </div>
+            <dl
+              className="grid gap-2 rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/40"
+              aria-live="polite"
+            >
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500 dark:text-zinc-400">Saldo actual</dt>
+                <dd className="font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {formatMoney(outstandingPrincipal, currencyCode)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500 dark:text-zinc-400">Monto a agregar</dt>
+                <dd className="font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
+                  + {formatMoney(addAmount, currencyCode)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+                <dt className="text-zinc-500 dark:text-zinc-400">Nuevo saldo</dt>
+                <dd className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {formatMoney(outstandingAfterAdd, currencyCode)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500 dark:text-zinc-400">Nuevo interés mensual sugerido</dt>
+                <dd className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {formatMoney(interestAfterAdd, currencyCode)}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={isPending || addAmount <= 0}
+                className={buttonPrimaryClass}
+              >
+                Agregar a la deuda
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddPrincipalOpen(false)}
+                disabled={isPending}
+                className={buttonSecondaryClass}
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {!isDraft && !isActive && !isPaid ? (
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Este préstamo está en estado «{labelLoanStatus(loan.status)}». No hay acciones
           disponibles.

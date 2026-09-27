@@ -12,7 +12,9 @@ import { requireSupabaseUser, type ActionResult } from "@/lib/actions/auth-conte
 import {
   loanAbonoInterestSchema,
   loanAbonoPrincipalSchema,
+  loanAddPrincipalSchema,
   loanCreateSchema,
+  loanDisbursementUpdateSchema,
   loanPaymentUpdateSchema,
   loanUpdateDraftSchema,
 } from "@/lib/validations/finance"
@@ -307,6 +309,314 @@ function parseAmountField(formData: FormData, key: string, emptyAsZero: boolean)
   const n = Number(raw)
   if (Number.isNaN(n)) return Number.NaN
   return round2(n)
+}
+
+export async function addToLoanPrincipal(formData: FormData): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+
+  const amount = parseAmountField(formData, "amount", false)
+  if (Number.isNaN(amount)) {
+    return { ok: false, message: "Cantidad inválida" }
+  }
+
+  const parsed = loanAddPrincipalSchema.safeParse({
+    loan_id: String(formData.get("loan_id") ?? ""),
+    amount,
+    notes: String(formData.get("notes") ?? ""),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: zodFirstMessage(parsed.error) }
+  }
+
+  const { supabase } = auth.data
+  const v = parsed.data
+
+  const { data: loan, error: lErr } = await supabase
+    .from("loans")
+    .select("*")
+    .eq("id", v.loan_id)
+    .single()
+
+  if (lErr || !loan) {
+    return { ok: false, message: "Préstamo no encontrado" }
+  }
+  if (loan.status !== "active" && loan.status !== "paid") {
+    return {
+      ok: false,
+      message: "Solo se puede agregar capital a préstamos activos o liquidados",
+    }
+  }
+
+  const poolBalance = await getPoolBalance(supabase, loan.liquidity_pool_id)
+  if (poolBalance < v.amount) {
+    return {
+      ok: false,
+      message: `Liquidez insuficiente en el fondo (disponible ${poolBalance.toFixed(2)})`,
+    }
+  }
+
+  const notesTrim = (v.notes ?? "").trim()
+  const { data: movement, error: poolErr } = await supabase
+    .from("pool_movements")
+    .insert({
+      pool_id: loan.liquidity_pool_id,
+      type: "loan_disbursement",
+      amount: -v.amount,
+      reference_loan_id: v.loan_id,
+      description: notesTrim
+        ? `Desembolso adicional: ${notesTrim}`
+        : "Desembolso adicional",
+    })
+    .select("id")
+    .single()
+
+  if (poolErr || !movement) {
+    return { ok: false, message: poolErr?.message ?? "No se pudo registrar el desembolso" }
+  }
+
+  const { error: upErr } = await supabase
+    .from("loans")
+    .update({
+      principal: round2(toNumber(loan.principal) + v.amount),
+      status: "active",
+    })
+    .eq("id", v.loan_id)
+
+  if (upErr) {
+    await supabase.from("pool_movements").delete().eq("id", movement.id)
+    return { ok: false, message: upErr.message }
+  }
+
+  revalidatePath("/admin/prestamos")
+  revalidatePath(`/admin/prestamos/${v.loan_id}`)
+  revalidatePath("/admin/movimientos-fondo")
+  revalidatePath("/admin")
+  return { ok: true, data: undefined }
+}
+
+type DisbursementContext = {
+  movement: { id: string; amount: string; reference_loan_id: string }
+  loan: { id: string; principal: string; status: string; liquidity_pool_id: string }
+}
+
+async function loadDisbursementContext(
+  supabase: SupabaseClient,
+  movementId: string
+): Promise<ActionResult<DisbursementContext>> {
+  const { data: movement, error: mErr } = await supabase
+    .from("pool_movements")
+    .select("id, amount, type, reference_loan_id")
+    .eq("id", movementId)
+    .single()
+
+  if (mErr || !movement || movement.type !== "loan_disbursement" || !movement.reference_loan_id) {
+    return { ok: false, message: "Desembolso no encontrado" }
+  }
+
+  const { data: loan, error: lErr } = await supabase
+    .from("loans")
+    .select("id, principal, status, liquidity_pool_id")
+    .eq("id", movement.reference_loan_id)
+    .single()
+
+  if (lErr || !loan) {
+    return { ok: false, message: "Préstamo no encontrado" }
+  }
+  if (loan.status !== "active" && loan.status !== "paid") {
+    return {
+      ok: false,
+      message: "Solo se modifican desembolsos de préstamos activos o liquidados",
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      movement: {
+        id: movement.id,
+        amount: String(movement.amount),
+        reference_loan_id: movement.reference_loan_id,
+      },
+      loan,
+    },
+  }
+}
+
+async function applyLoanPrincipalFromDisbursements(
+  supabase: SupabaseClient,
+  loanId: string,
+  newPrincipal: number
+): Promise<string | null> {
+  const { data: first } = await supabase
+    .from("pool_movements")
+    .select("occurred_at")
+    .eq("reference_loan_id", loanId)
+    .eq("type", "loan_disbursement")
+    .order("occurred_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  const { error } = await supabase
+    .from("loans")
+    .update({
+      principal: newPrincipal,
+      ...(first?.occurred_at ? { disbursed_at: first.occurred_at } : {}),
+    })
+    .eq("id", loanId)
+
+  if (error) return error.message
+
+  await syncLoanStatusFromRepayments(supabase, loanId, newPrincipal)
+  return null
+}
+
+function revalidateLoanPaths(loanId: string) {
+  revalidatePath("/admin/prestamos")
+  revalidatePath(`/admin/prestamos/${loanId}`)
+  revalidatePath("/admin/movimientos-fondo")
+  revalidatePath("/admin")
+}
+
+export async function updateLoanDisbursement(formData: FormData): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+
+  const amount = parseAmountField(formData, "amount", false)
+  if (Number.isNaN(amount)) {
+    return { ok: false, message: "Cantidad inválida" }
+  }
+
+  const parsed = loanDisbursementUpdateSchema.safeParse({
+    movement_id: String(formData.get("movement_id") ?? ""),
+    amount,
+    description: String(formData.get("description") ?? ""),
+    occurred_at: String(formData.get("occurred_at") ?? ""),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: zodFirstMessage(parsed.error) }
+  }
+
+  const { supabase } = auth.data
+  const v = parsed.data
+
+  const occurredAt = new Date(v.occurred_at)
+  if (Number.isNaN(occurredAt.getTime())) {
+    return { ok: false, message: "Fecha u hora inválida" }
+  }
+
+  const ctx = await loadDisbursementContext(supabase, v.movement_id)
+  if (!ctx.ok) return ctx
+  const { movement, loan } = ctx.data
+
+  const oldAmount = round2(Math.abs(toNumber(movement.amount)))
+  const newAmount = round2(v.amount)
+  const delta = round2(newAmount - oldAmount)
+  const newPrincipal = round2(toNumber(loan.principal) + delta)
+
+  const repaid = await fetchPrincipalRepaidSum(supabase, loan.id)
+  if (newPrincipal < repaid - 0.01) {
+    return {
+      ok: false,
+      message: `El capital no puede quedar por debajo de lo ya abonado (${repaid.toFixed(2)})`,
+    }
+  }
+
+  if (delta > 0) {
+    const poolBalance = await getPoolBalance(supabase, loan.liquidity_pool_id)
+    if (poolBalance < delta) {
+      return {
+        ok: false,
+        message: `Liquidez insuficiente en el fondo (disponible ${poolBalance.toFixed(2)})`,
+      }
+    }
+  }
+
+  const { data: previous } = await supabase
+    .from("pool_movements")
+    .select("amount, description, occurred_at")
+    .eq("id", movement.id)
+    .single()
+
+  const { error: mvErr } = await supabase
+    .from("pool_movements")
+    .update({
+      amount: -newAmount,
+      description: (v.description ?? "").trim() || "Desembolso de préstamo",
+      occurred_at: occurredAt.toISOString(),
+    })
+    .eq("id", movement.id)
+
+  if (mvErr) {
+    return { ok: false, message: mvErr.message }
+  }
+
+  const loanErr = await applyLoanPrincipalFromDisbursements(supabase, loan.id, newPrincipal)
+  if (loanErr) {
+    if (previous) {
+      await supabase.from("pool_movements").update(previous).eq("id", movement.id)
+    }
+    return { ok: false, message: loanErr }
+  }
+
+  revalidateLoanPaths(loan.id)
+  return { ok: true, data: undefined }
+}
+
+export async function deleteLoanDisbursement(movementId: string): Promise<ActionResult> {
+  const auth = await requireSupabaseUser()
+  if (!auth.ok) return auth
+  const { supabase } = auth.data
+
+  const ctx = await loadDisbursementContext(supabase, movementId)
+  if (!ctx.ok) return ctx
+  const { movement, loan } = ctx.data
+
+  const { count } = await supabase
+    .from("pool_movements")
+    .select("id", { count: "exact", head: true })
+    .eq("reference_loan_id", loan.id)
+    .eq("type", "loan_disbursement")
+
+  if ((count ?? 0) <= 1) {
+    return {
+      ok: false,
+      message: "No se puede eliminar el único desembolso del préstamo; edita su monto",
+    }
+  }
+
+  const amount = round2(Math.abs(toNumber(movement.amount)))
+  const newPrincipal = round2(toNumber(loan.principal) - amount)
+
+  const repaid = await fetchPrincipalRepaidSum(supabase, loan.id)
+  if (newPrincipal < repaid - 0.01) {
+    return {
+      ok: false,
+      message: `El capital no puede quedar por debajo de lo ya abonado (${repaid.toFixed(2)})`,
+    }
+  }
+
+  const { data: previous } = await supabase
+    .from("pool_movements")
+    .select("*")
+    .eq("id", movement.id)
+    .single()
+
+  const { error: delErr } = await supabase.from("pool_movements").delete().eq("id", movement.id)
+  if (delErr) {
+    return { ok: false, message: delErr.message }
+  }
+
+  const loanErr = await applyLoanPrincipalFromDisbursements(supabase, loan.id, newPrincipal)
+  if (loanErr) {
+    if (previous) {
+      await supabase.from("pool_movements").insert(previous)
+    }
+    return { ok: false, message: loanErr }
+  }
+
+  revalidateLoanPaths(loan.id)
+  return { ok: true, data: undefined }
 }
 
 /**

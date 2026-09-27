@@ -101,6 +101,19 @@ export const loanUpdateDraftSchema = z.object({
   purpose: z.string().optional().or(z.literal("")),
 })
 
+export const loanAddPrincipalSchema = z.object({
+  loan_id: z.string().uuid(),
+  amount: z.number().positive("El monto debe ser mayor a 0"),
+  notes: z.string().optional().or(z.literal("")),
+})
+
+export const loanDisbursementUpdateSchema = z.object({
+  movement_id: z.string().uuid(),
+  amount: z.number().positive("El monto debe ser mayor a 0"),
+  description: z.string().optional().or(z.literal("")),
+  occurred_at: z.string().min(1, "Indica fecha y hora"),
+})
+
 export const loanAbonoInterestSchema = z.object({
   loan_id: z.string().uuid(),
   abono_kind: z.literal("interest"),

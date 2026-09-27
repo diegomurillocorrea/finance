@@ -12,7 +12,12 @@ import {
   outstandingPrincipal,
   totalPrincipalRepaidFromRows,
 } from "@/lib/loan-balance"
-import type { LoanInstallmentRow, LoanRow, LoanPaymentRow } from "@/lib/database.types"
+import type {
+  LoanInstallmentRow,
+  LoanPaymentRow,
+  LoanRow,
+  PoolMovementRow,
+} from "@/lib/database.types"
 import {
   cardClass,
   tableClass,
@@ -22,6 +27,7 @@ import {
 } from "@/lib/form-classes"
 import { LoanDetailActions } from "./loan-detail-actions"
 import { LoanPaymentsTable } from "@/components/admin/prestamos/loan-payments-table"
+import { LoanDisbursementsTable } from "@/components/admin/prestamos/loan-disbursements-table"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -73,6 +79,18 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
     .eq("loan_id", id)
     .order("paid_at", { ascending: false })
 
+  const { data: disbursementRows } = await supabase
+    .from("pool_movements")
+    .select("id, amount, occurred_at, description")
+    .eq("reference_loan_id", id)
+    .eq("type", "loan_disbursement")
+    .order("occurred_at", { ascending: true })
+
+  const desembolsos = (disbursementRows ?? []) as Pick<
+    PoolMovementRow,
+    "id" | "amount" | "occurred_at" | "description"
+  >[]
+  const currencyCode = loan.liquidity_pools?.currency ?? undefined
   const cuotas = (installments ?? []) as LoanInstallmentRow[]
   const allPagos = (allPayments ?? []) as LoanPaymentRow[]
   const pagos = allPagos.slice(0, 100)
@@ -110,7 +128,7 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
       <section className={`${cardClass} grid gap-4 tablet:grid-cols-3`}>
         <div>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Capital original
+            Capital prestado
           </p>
           <p className="mt-1 text-xl font-semibold tabular-nums">
             {formatMoney(toNumber(loan.principal))}
@@ -192,6 +210,24 @@ export default async function PrestamoDetallePage({ params }: PageProps) {
               </dd>
             </div>
           </dl>
+        </section>
+      ) : null}
+
+      {desembolsos.length > 0 ? (
+        <section className={cardClass}>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Desembolsos
+          </h2>
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            Cada monto prestado a este préstamo. La suma es el capital prestado.
+          </p>
+          <div className="mt-4">
+            <LoanDisbursementsTable
+              rows={desembolsos}
+              canEdit={loan.status === "active" || loan.status === "paid"}
+              currencyCode={currencyCode}
+            />
+          </div>
         </section>
       ) : null}
 

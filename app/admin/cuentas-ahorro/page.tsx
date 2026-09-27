@@ -1,3 +1,4 @@
+import { getSavingsBalancesByAccount } from "@/lib/actions/balances"
 import { getAdminSupabaseOrRedirect } from "@/lib/supabase/require-admin-session"
 import {
   CuentasAhorroPanel,
@@ -12,27 +13,29 @@ export default async function CuentasAhorroPage({ searchParams }: PageProps) {
   const sp = await searchParams
   const { supabase } = await getAdminSupabaseOrRedirect()
 
-  const [{ data: accounts, error }, { data: persons }, { data: pools }] = await Promise.all([
-    supabase
-      .from("savings_accounts")
-      .select(
-        `
+  const [{ data: accounts, error }, { data: persons }, { data: pools }, balanceResult] =
+    await Promise.all([
+      supabase
+        .from("savings_accounts")
+        .select(
+          `
       id,
       status,
       opened_at,
       persons (full_name),
       liquidity_pools (name)
     `
-      )
-      .order("opened_at", { ascending: false }),
-    supabase
-      .from("persons")
-      .select("id, full_name, phone")
-      .eq("status", "active")
-      .eq("is_member", true)
-      .order("full_name"),
-    supabase.from("liquidity_pools").select("id, name").order("name"),
-  ])
+        )
+        .order("opened_at", { ascending: false }),
+      supabase
+        .from("persons")
+        .select("id, full_name, phone")
+        .eq("status", "active")
+        .eq("is_member", true)
+        .order("full_name"),
+      supabase.from("liquidity_pools").select("id, name").order("name"),
+      getSavingsBalancesByAccount(supabase),
+    ])
 
   const list: CuentaListaRow[] = (accounts ?? []).map((row) => {
     const r = row as {
@@ -48,17 +51,20 @@ export default async function CuentasAhorroPage({ searchParams }: PageProps) {
       id: r.id,
       status: r.status,
       opened_at: r.opened_at,
+      balance: balanceResult.balances.get(r.id) ?? 0,
       persons: Array.isArray(p) ? p[0] ?? null : p ?? null,
       liquidity_pools: Array.isArray(pool) ? pool[0] ?? null : pool ?? null,
     }
   })
+
+  const errorMessage = [error?.message, balanceResult.errorMessage].filter(Boolean).join(" ")
 
   return (
     <CuentasAhorroPanel
       accounts={list}
       persons={persons ?? []}
       pools={pools ?? []}
-      errorMessage={error?.message ?? null}
+      errorMessage={errorMessage || null}
       initialOpenCreate={sp.nueva === "1"}
     />
   )
